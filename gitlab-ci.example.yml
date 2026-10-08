@@ -1,0 +1,30 @@
+# Deploy job for the app's .gitlab-ci.yml. sejajar triggers one pipeline per
+# site with SITE=<environment name> and DEPLOY_SHA=<main head>. Every site gets
+# the same SHA even if main moves while the triggers are going out.
+#
+# Assumes:
+#   - the build stage pushes $CI_REGISTRY_IMAGE/app:$CI_COMMIT_SHA on main
+#   - GitLab agent for Kubernetes, one agent per site, named like the site
+#   - a suspended CronJob "app-migrate" in each namespace as the migration Job
+#     template (it carries the DB env/secrets), running the migration binary
+
+deploy:
+  stage: deploy
+  image: bitnami/kubectl:1.31
+  rules:
+    - if: $SITE && $DEPLOY_SHA
+  resource_group: $SITE            # one deploy per site at a time
+  environment:
+    name: $SITE
+  variables:
+    NS: app
+    IMG: $CI_REGISTRY_IMAGE/app:$DEPLOY_SHA
+  script:
+    - kubectl config use-context "$CI_PROJECT_PATH:$SITE"
+    # 1. migrate first (the old code keeps running against the additive schema)
+    - kubectl -n $NS set image cronjob/app-migrate migrate=$IMG
+    - kubectl -n $NS create job "migrate-${DEPLOY_SHA:0:8}-$CI_PIPELINE_ID" --from=cronjob/app-migrate
+    - kubectl -n $NS wait --for=condition=complete --timeout=15m job/"migrate-${DEPLOY_SHA:0:8}-$CI_PIPELINE_ID"
+    # 2. roll the app
+    - kubectl -n $NS set image deployment/app app=$IMG
+    - kubectl -n $NS rollout status deployment/app --timeout=10m

@@ -1,0 +1,795 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Sejajar</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2307070a'/%3E%3Cpath d='M7 11h18M7 16h18M7 21h18' stroke='%23d4af37' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+@font-face { font-family: "Cormorant Garamond"; src: url(fonts/cormorant-garamond-normal.woff2) format("woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Cormorant Garamond"; src: url(fonts/cormorant-garamond-italic.woff2) format("woff2"); font-weight: 400 700; font-style: italic; font-display: swap; }
+
+:root {
+  --bg: #07070a;
+  --panel: rgb(18 16 13 / .72);
+  --raise: rgb(255 240 200 / .035);
+  --line: rgb(212 175 55 / .14);
+  --line-strong: rgb(212 175 55 / .32);
+  --ink: #f4eedf;
+  --muted: #a69c86;
+  --faint: #6f675a;
+  --gold: #d4af37;
+  --gold-hi: #f6dc94;
+  --gold-grad: linear-gradient(135deg, #f8e3a3 0%, #d4af37 42%, #a8832a 72%, #f0d58a 100%);
+  --ok: #8fdcb4; --ok-bg: rgb(143 220 180 / .08);
+  --warn: #f0c46c; --warn-bg: rgb(240 196 108 / .09);
+  --bad: #ff8f80; --bad-bg: rgb(255 143 128 / .09);
+  --off: #a59f95; --off-bg: rgb(165 159 149 / .08);
+  --serif: "Cormorant Garamond", "Cormorant", "Playfair Display", "Bodoni 72", Didot, Georgia, serif;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --r-lg: 22px; --r-md: 14px;
+  --ease: cubic-bezier(.22, .8, .24, 1);
+  --shadow: 0 1px 0 rgb(255 236 179 / .05) inset, 0 24px 60px -24px rgb(0 0 0 / .85), 0 0 0 1px var(--line);
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); color-scheme: dark; scrollbar-color: rgb(212 175 55 / .3) transparent; }
+* { scrollbar-width: thin; scrollbar-color: rgb(212 175 55 / .3) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgb(212 175 55 / .3); border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+body {
+  margin: 0; min-height: 100vh; color: var(--ink);
+  font: 14px/1.5 var(--sans); letter-spacing: .005em;
+  background:
+    radial-gradient(1200px 600px at 50% -12%, rgb(212 175 55 / .11), transparent 62%),
+    radial-gradient(900px 500px at 110% 110%, rgb(212 175 55 / .06), transparent 60%),
+    var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: rgb(212 175 55 / .35); color: #fff; }
+:focus-visible { outline: 1.5px solid var(--gold); outline-offset: 3px; border-radius: 8px; }
+code, .mono { font-family: var(--mono); font-size: 12.5px; letter-spacing: 0; }
+[hidden] { display: none !important; }
+
+/* ---------- silk ---------- */
+#silk { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; transition: opacity 1.6s var(--ease); }
+#silk[data-mode=ambient] { opacity: .2; }
+#busy { position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 50; opacity: 0; transition: opacity .4s; overflow: hidden; }
+#busy::before { content: ""; position: absolute; inset: 0; width: 45%; background: linear-gradient(90deg, transparent, var(--gold-hi), var(--gold), transparent); animation: glide 1.4s var(--ease) infinite; }
+body.busy #busy { opacity: 1; }
+@keyframes glide { from { transform: translateX(-100%); } to { transform: translateX(240%); } }
+
+/* ---------- boot + sign-in ---------- */
+.stage { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 24px 16px; transition: opacity .9s var(--ease), visibility .9s; }
+.stage.gone { opacity: 0; visibility: hidden; }
+.wordmark { font-family: var(--serif); font-weight: 500; letter-spacing: .32em; text-transform: uppercase; margin-left: .32em;
+  background: var(--gold-grad); background-size: 220% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: sheen 6s ease-in-out infinite; }
+@keyframes sheen { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+#boot .wordmark { font-size: clamp(34px, 7vw, 58px); }
+#boot .whisper { margin-top: 14px; text-align: center; font-family: var(--serif); font-style: italic; font-size: 18px; color: var(--muted); animation: breathe 2.8s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+
+.login-card { width: min(420px, 100%); padding: 40px 36px 34px; border-radius: 28px; text-align: center;
+  background: linear-gradient(180deg, rgb(30 26 18 / .78), rgb(12 11 9 / .82)); backdrop-filter: blur(18px) saturate(1.2);
+  box-shadow: var(--shadow), 0 0 120px -40px rgb(212 175 55 / .35); }
+#login:not(.gone) .login-card { animation: rise 1s var(--ease) both .15s; }
+.login-card .wordmark { font-size: 40px; }
+.login-card .tagline { font-family: var(--serif); font-style: italic; font-size: 19px; color: var(--muted); margin: 6px 0 30px; }
+.login-card form { display: grid; gap: 12px; text-align: left; }
+.login-card .error { color: var(--bad); font-size: 13px; min-height: 1.5em; margin-top: 14px; }
+.rule { height: 1px; margin: 26px auto 18px; width: 70%; background: linear-gradient(90deg, transparent, var(--line-strong), transparent); }
+.fine { color: var(--faint); font-size: 12px; }
+
+/* ---------- shell ---------- */
+#app { position: relative; z-index: 1; opacity: 0; transition: opacity 1s var(--ease); }
+#app.shown { opacity: 1; }
+header { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center; padding: 18px clamp(16px, 4vw, 40px);
+  background: linear-gradient(180deg, rgb(7 7 10 / .92), rgb(7 7 10 / .68)); backdrop-filter: blur(16px); border-bottom: 1px solid var(--line); }
+header .wordmark { font-size: 24px; letter-spacing: .26em; }
+.meta { display: flex; gap: 22px; flex-wrap: wrap; color: var(--muted); font-size: 12.5px; }
+.meta span { display: grid; gap: 1px; }
+.meta small { text-transform: uppercase; letter-spacing: .16em; font-size: 10px; color: var(--faint); }
+.meta b { color: var(--gold-hi); font-family: var(--mono); font-weight: 500; font-size: 12.5px; }
+.spacer { flex: 1; }
+.me { display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 4px; border-radius: 999px; border: 1px solid var(--line); background: var(--raise); }
+.avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; overflow: hidden; background: var(--gold-grad); color: #1a1408; font-weight: 700; font-size: 12px; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.me .who { display: grid; line-height: 1.15; font-size: 12.5px; }
+.me .who small { color: var(--muted); font-size: 11px; }
+
+main { max-width: 1240px; margin: 0 auto; padding: 32px clamp(16px, 4vw, 40px) 72px; display: grid; gap: 26px; }
+#app.shown .reveal { animation: rise .9s var(--ease) both; animation-delay: calc(var(--i, 0) * 90ms + 150ms); }
+@keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.995); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+.card { position: relative; overflow: hidden; border-radius: var(--r-lg); padding: 18px 20px 16px; background: var(--panel); box-shadow: var(--shadow); backdrop-filter: blur(10px);
+  transition: transform .5s var(--ease), box-shadow .5s var(--ease); }
+.card:hover { transform: translateY(-3px); box-shadow: var(--shadow), 0 18px 50px -20px rgb(212 175 55 / .28); }
+.card::after { content: ""; position: absolute; inset: 0 0 auto; height: 1px; background: linear-gradient(90deg, transparent, var(--line-strong), transparent); }
+.card .n { font-family: var(--serif); font-size: 46px; line-height: 1; font-weight: 500; margin-bottom: 10px; font-variant-numeric: lining-nums tabular-nums; }
+.card[data-state=OK] .n { background: var(--gold-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+section.panel { border-radius: var(--r-lg); background: var(--panel); box-shadow: var(--shadow); backdrop-filter: blur(10px); overflow: hidden; }
+.bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.bar h2 { font-family: var(--serif); font-weight: 500; font-size: 24px; margin: 0 10px 0 0; letter-spacing: .02em; }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 13px 14px; white-space: nowrap; vertical-align: top; }
+th { font-size: 10.5px; color: var(--faint); font-weight: 600; text-transform: uppercase; letter-spacing: .16em; border-bottom: 1px solid var(--line); }
+tbody tr { border-bottom: 1px solid rgb(212 175 55 / .07); transition: background .4s var(--ease); }
+tbody tr:last-child { border-bottom: 0; }
+tbody tr:hover { background: linear-gradient(90deg, rgb(212 175 55 / .06), transparent 70%); }
+tbody.fresh tr { animation: rise .7s var(--ease) both; animation-delay: calc(var(--i, 0) * 45ms); }
+.detail { white-space: normal; overflow-wrap: anywhere; color: var(--muted); font-size: 12.5px; min-width: 200px; max-width: 360px; }
+.empty { padding: 26px 20px; color: var(--muted); font-family: var(--serif); font-style: italic; font-size: 17px; white-space: normal; }
+
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; border: 1px solid color-mix(in srgb, currentColor 28%, transparent); }
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+.s-OK, .s-success { color: var(--ok); background: var(--ok-bg); }
+.s-BEHIND, .s-SCHEMA_PENDING, .s-running, .s-pending, .s-created, .s-preparing, .s-waiting_for_resource, .s-scheduled { color: var(--warn); background: var(--warn-bg); }
+.s-DB_AHEAD, .s-DOWN, .s-failed, .s-error { color: var(--bad); background: var(--bad-bg); }
+.s-canceled, .s-skipped, .s-manual { color: var(--off); background: var(--off-bg); }
+.s-running::before, .s-pending::before, .s-created::before, .s-preparing::before { animation: pulse 1.3s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.7); opacity: .35; } }
+
+button, .btn { font: inherit; font-size: 13px; border: 1px solid var(--line-strong); background: rgb(212 175 55 / .03); color: var(--ink); border-radius: 999px; padding: 8px 16px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  transition: border-color .35s var(--ease), background .35s var(--ease), transform .2s var(--ease), box-shadow .35s var(--ease), opacity .3s; }
+button:hover, .btn:hover { border-color: var(--gold); background: rgb(212 175 55 / .08); }
+button:active, .btn:active { transform: scale(.975); }
+button:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+.primary { position: relative; overflow: hidden; border: 0; color: #1b1406; font-weight: 650; letter-spacing: .02em; background: var(--gold-grad); background-size: 180% 100%; box-shadow: 0 8px 26px -10px rgb(212 175 55 / .65), 0 1px 0 rgb(255 255 255 / .45) inset; }
+.primary:hover { background: var(--gold-grad); background-size: 180% 100%; background-position: 100% 0; box-shadow: 0 12px 34px -10px rgb(212 175 55 / .85), 0 1px 0 rgb(255 255 255 / .5) inset; }
+.primary::after { content: ""; position: absolute; inset: 0; transform: translateX(-120%) skewX(-18deg); background: linear-gradient(90deg, transparent, rgb(255 255 255 / .55), transparent); transition: transform .9s var(--ease); }
+.primary:hover::after { transform: translateX(140%) skewX(-18deg); }
+.primary:disabled { box-shadow: none; }
+.big { padding: 13px 22px; font-size: 14.5px; width: 100%; }
+.link { border: 0; padding: 0; background: none; color: var(--gold-hi); font-weight: 600; border-radius: 6px; }
+.link:hover { background: none; color: #fff; text-shadow: 0 0 18px rgb(212 175 55 / .6); }
+.icon { width: 36px; height: 36px; padding: 0; flex: none; }
+
+input[type=checkbox] { appearance: none; width: 17px; height: 17px; margin: 0; border-radius: 6px; border: 1px solid var(--line-strong); background: transparent; display: grid; place-items: center; cursor: pointer; transition: all .3s var(--ease); }
+input[type=checkbox]::after { content: ""; width: 9px; height: 5px; border: 2px solid #1b1406; border-top: 0; border-right: 0; transform: rotate(-45deg) scale(0); margin-top: -2px; transition: transform .3s var(--ease); }
+input[type=checkbox]:checked { background: var(--gold-grad); border-color: transparent; box-shadow: 0 0 14px rgb(212 175 55 / .5); }
+input[type=checkbox]:checked::after { transform: rotate(-45deg) scale(1); }
+
+label { display: grid; gap: 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; }
+input[type=text], input[type=url], input[type=number], input[type=password] {
+  font: inherit; font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--ink); width: 100%; min-width: 0;
+  background: rgb(0 0 0 / .35); border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 13px;
+  transition: border-color .35s var(--ease), box-shadow .35s var(--ease), background .35s; }
+input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 4px rgb(212 175 55 / .12); background: rgb(0 0 0 / .5); }
+input[readonly] { color: var(--muted); }
+input:user-invalid { border-color: var(--bad); }
+
+.deploy { padding: 16px 20px; border-bottom: 1px solid rgb(212 175 55 / .07); display: grid; gap: 10px; }
+.deploy:last-child { border-bottom: 0; }
+.deploy .head { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; color: var(--muted); }
+.deploy .head b { font-family: var(--serif); font-size: 17px; font-weight: 600; color: var(--ink); }
+.runs { display: flex; flex-wrap: wrap; gap: 6px; }
+.runs a { text-decoration: none; border-radius: 999px; }
+
+.skel { display: block; height: 11px; border-radius: 6px; background: linear-gradient(90deg, rgb(212 175 55 / .05), rgb(212 175 55 / .2), rgb(212 175 55 / .05)); background-size: 220% 100%; animation: shimmer 1.8s ease-in-out infinite; }
+@keyframes shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+
+/* ---------- dialogs ---------- */
+dialog { border: 0; border-radius: 26px; background: linear-gradient(180deg, rgb(28 24 17 / .96), rgb(12 11 9 / .97)); color: var(--ink); padding: 0; width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px);
+  box-shadow: var(--shadow), 0 0 140px -50px rgb(212 175 55 / .4);
+  opacity: 0; transform: translateY(12px) scale(.97);
+  transition: opacity .45s var(--ease), transform .55s var(--ease), overlay .45s allow-discrete, display .45s allow-discrete; }
+dialog[open] { opacity: 1; transform: none; }
+@starting-style { dialog[open] { opacity: 0; transform: translateY(12px) scale(.97); } }
+dialog::backdrop { background: rgb(4 4 6 / 0); transition: background .45s, overlay .45s allow-discrete, display .45s allow-discrete; }
+dialog[open]::backdrop { background: rgb(4 4 6 / .66); backdrop-filter: blur(8px); }
+@starting-style { dialog[open]::backdrop { background: rgb(4 4 6 / 0); } }
+dialog form { display: flex; flex-direction: column; max-height: inherit; }
+dialog .body { padding: 26px 28px 20px; display: grid; gap: 16px; overflow: auto; }
+dialog h3 { margin: 0; font-family: var(--serif); font-weight: 500; font-size: 28px; line-height: 1.15; }
+dialog .actions { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 28px 22px; border-top: 1px solid var(--line); }
+dialog ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
+.warnbox { background: var(--warn-bg); color: var(--warn); border: 1px solid rgb(240 196 108 / .25); border-radius: var(--r-md); padding: 12px 14px; }
+#history { width: min(980px, calc(100vw - 32px)); }
+#settings { width: min(780px, calc(100vw - 32px)); }
+.timeline { max-height: 60vh; overflow: auto; }
+fieldset { border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px 16px; margin: 0; display: grid; gap: 12px; background: rgb(0 0 0 / .18); min-width: 0; }
+legend { font-family: var(--serif); font-size: 19px; padding: 0 8px; color: var(--gold-hi); }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.siterow { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(0, 3fr) auto; gap: 8px; align-items: center; animation: rise .5s var(--ease) both; }
+.hint { color: var(--muted); font-size: 12.5px; margin: 0; text-transform: none; letter-spacing: 0; }
+.copy { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.err { color: var(--bad); min-height: 1.2em; }
+
+#toast { position: fixed; bottom: 24px; left: 50%; z-index: 60; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; max-width: calc(100vw - 32px);
+  background: linear-gradient(180deg, #1d1912, #0f0d0a); color: var(--ink); padding: 12px 18px; border-radius: 999px; box-shadow: var(--shadow), 0 0 40px -10px rgb(212 175 55 / .4);
+  transition: opacity .5s var(--ease), transform .6s var(--ease); }
+#toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+@media (max-width: 640px) {
+  .meta { order: 3; width: 100%; gap: 16px; }
+  .me .who { display: none; }
+  .bar h2 { width: 100%; }
+  .login-card { padding: 32px 22px 26px; }
+  .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .card { padding: 14px 16px 12px; }
+  .card .n { font-size: 36px; }
+  dialog .body { padding: 22px 18px 16px; }
+  dialog .actions { padding: 14px 18px 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+<canvas id="silk" aria-hidden="true"></canvas>
+<div id="busy" aria-hidden="true"></div>
+
+<div class="stage" id="boot" role="status" aria-live="polite">
+  <div>
+    <div class="wordmark">Sejajar</div>
+    <div class="whisper">aligning the fleet…</div>
+  </div>
+</div>
+
+<div class="stage gone" id="login">
+  <div class="login-card">
+    <div class="wordmark">Sejajar</div>
+    <div class="tagline">Every site, one version.</div>
+    <div id="login-gitlab" hidden>
+      <a class="btn primary big" href="/auth/gitlab">Sign in with GitLab</a>
+      <div class="rule"></div>
+      <div class="fine">Access follows your role on the GitLab project.</div>
+    </div>
+    <form id="login-password" hidden>
+      <label>User <input type="text" name="user" autocomplete="username" required></label>
+      <label>Password <input type="password" name="password" autocomplete="current-password" required></label>
+      <button class="primary big" type="submit">Sign in</button>
+      <div class="fine" style="text-align:center;margin-top:6px">Setup sign-in. Connect GitLab in Settings to retire it.</div>
+    </form>
+    <div class="error" id="login-error" role="alert"></div>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <div class="wordmark">Sejajar</div>
+    <div class="meta">
+      <span><small>Branch</small><b id="branch">–</b></span>
+      <span><small>Head</small><b id="head">–</b></span>
+      <span><small>Checked</small><b id="checked">–</b></span>
+    </div>
+    <div class="spacer"></div>
+    <button id="refresh" class="icon" title="Refresh" aria-label="Refresh">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+    </button>
+    <button id="open-settings" hidden>Settings</button>
+    <div class="me">
+      <div class="avatar" id="avatar"></div>
+      <div class="who"><b id="me-name"></b><small id="me-role"></small></div>
+      <button id="logout" class="link" style="padding:0 8px">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="cards reveal" id="cards" style="--i:0"></div>
+
+    <section class="panel reveal" style="--i:1">
+      <div class="bar">
+        <h2>Sites</h2>
+        <button id="select-stale">Select out of date</button>
+        <button id="select-none">Clear</button>
+        <div class="spacer"></div>
+        <button class="primary" id="deploy" disabled>Deploy</button>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr>
+            <th><input type="checkbox" id="all" aria-label="Select all sites"></th>
+            <th>Site</th><th>State</th><th>Commit</th><th>Behind</th>
+            <th>Schema (DB)</th><th>Pending</th><th>Unknown</th><th>Detail</th>
+          </tr></thead>
+          <tbody id="sites"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel reveal" style="--i:2">
+      <div class="bar"><h2>Deploy history</h2></div>
+      <div id="deploys"></div>
+    </section>
+  </main>
+</div>
+
+<dialog id="confirm">
+  <form method="dialog">
+    <div class="body">
+      <h3 id="confirm-title"></h3>
+      <div id="confirm-body" style="display:grid;gap:14px"></div>
+    </div>
+    <div class="actions">
+      <button value="cancel">Cancel</button>
+      <button class="primary" value="ok">Deploy</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="history">
+  <form method="dialog">
+    <div class="body">
+      <h3 id="history-title"></h3>
+      <div class="timeline scroll" id="history-body"></div>
+    </div>
+    <div class="actions"><button value="close">Close</button></div>
+  </form>
+</dialog>
+
+<dialog id="settings">
+  <form id="settings-form">
+    <div class="body">
+      <h3>Settings</h3>
+      <p class="hint">Stored in the database and applied at once. Only <code>DATABASE_URL</code> and <code>GITLAB_TOKEN</code> live in the environment.</p>
+      <fieldset>
+        <legend>GitLab</legend>
+        <div class="grid2">
+          <label>URL <input type="url" name="url" placeholder="https://gitlab.example.com"></label>
+          <label>Project (path or id) <input type="text" name="project" placeholder="group/app"></label>
+          <label>Branch <input type="text" name="branch" placeholder="main"></label>
+          <label>Poll every (seconds) <input type="number" name="poll" min="10" required></label>
+        </div>
+        <label>Version API token (optional) <input type="password" name="vtoken" autocomplete="off"></label>
+      </fieldset>
+      <fieldset>
+        <legend>GitLab sign-in</legend>
+        <p class="hint">Create an application on your GitLab (Admin → Applications, or the group's Settings → Applications) with scope <code>api</code> and this redirect URI. Once both fields are set, only GitLab sign-in works.</p>
+        <label>Redirect URI <span class="copy"><input type="text" name="redirect" readonly><button type="button" id="copy-redirect">Copy</button></span></label>
+        <div class="grid2">
+          <label>Application ID <input type="text" name="oauth_id" autocomplete="off"></label>
+          <label>Secret <input type="password" name="oauth_secret" autocomplete="off"></label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Sites</legend>
+        <p class="hint">Name = GitLab environment, passed to CI as <code>$SITE</code>.</p>
+        <div id="site-rows" style="display:grid;gap:8px"></div>
+        <div><button type="button" id="add-site">Add site</button></div>
+      </fieldset>
+      <fieldset id="fallback">
+        <legend>Setup sign-in</legend>
+        <div class="grid2">
+          <label>User <input type="text" name="user" autocomplete="username"></label>
+          <label>New password (blank = keep) <input type="password" name="password" minlength="8" autocomplete="new-password"></label>
+        </div>
+      </fieldset>
+      <div id="settings-err" class="err" role="alert"></div>
+    </div>
+    <div class="actions">
+      <button type="button" id="settings-cancel">Cancel</button>
+      <button class="primary" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const STATES = ["OK", "BEHIND", "SCHEMA_PENDING", "DB_AHEAD", "DOWN"];
+const LABEL = { OK: "Aligned", BEHIND: "Behind", SCHEMA_PENDING: "Schema pending", DB_AHEAD: "DB ahead", DOWN: "Down" };
+const ROLE = { 20: "Reporter", 30: "Developer", 40: "Maintainer", 50: "Owner" };
+const ACTIVE = new Set(["created", "waiting_for_resource", "preparing", "pending", "running", "scheduled"]);
+const $ = (id) => document.getElementById(id);
+const still = matchMedia("(prefers-reduced-motion: reduce)");
+let me = null, snap = null, deployTimer = null, statusTimer = null, wasBusy = false, firstSites = true;
+const selected = new Set();
+
+// h builds DOM nodes; text is always set as text, never parsed as HTML.
+function h(tag, attrs = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k === "style") el.style.cssText = v;
+    else if (v !== false && v != null) el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid != null) el.append(kid instanceof Node ? kid : String(kid));
+  return el;
+}
+const short = (sha) => (sha || "").slice(0, 8);
+const badge = (s, text) => h("span", { class: "badge s-" + s }, text || LABEL[s] || s);
+const when = (t) => new Date(t).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+
+// ---------- silk: gold threads drifting like a sheet of silk ----------
+const silk = (() => {
+  const c = $("silk"), g = c.getContext("2d");
+  let w = 0, ht = 0, t = 0, last = 0, raf = 0, mode = "full";
+  function size() {
+    const dpr = Math.min(devicePixelRatio || 1, mode === "full" ? 2 : 1);
+    w = innerWidth; ht = innerHeight;
+    c.width = w * dpr; c.height = ht * dpr;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function draw() {
+    g.clearRect(0, 0, w, ht);
+    const grad = g.createLinearGradient(0, 0, w, ht);
+    grad.addColorStop(0, "rgba(138,106,28,0)");
+    grad.addColorStop(.3, "rgba(212,175,55,.9)");
+    grad.addColorStop(.52, "rgba(255,238,190,1)");
+    grad.addColorStop(.74, "rgba(212,175,55,.85)");
+    grad.addColorStop(1, "rgba(138,106,28,0)");
+    g.strokeStyle = grad;
+    g.lineWidth = 1;
+    const n = 54, cy = ht * .56, amp = Math.min(ht * .17, 160), stepX = Math.max(8, w / 140);
+    for (let i = 0; i < n; i++) {
+      const p = i / (n - 1);
+      g.globalAlpha = .025 + .17 * Math.pow(Math.sin(Math.PI * p), 2); // brighter mid-sheet: the sheen
+      g.beginPath();
+      for (let x = -20; x <= w + 20; x += stepX) {
+        const u = x / w;
+        const y = cy
+          + Math.sin(u * 3.0 + t * 1.25 + p * 1.7) * amp * (.62 + .38 * Math.sin(t * .6 + p * 2.2))
+          + Math.sin(u * 6.8 - t * 1.7 + p * .9) * amp * .16
+          + (p - .5) * ht * .26 * Math.cos(u * 2.1 + t * .45);
+        x === -20 ? g.moveTo(x, y) : g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+  }
+  function frame(now) {
+    raf = requestAnimationFrame(frame);
+    const gap = mode === "full" ? 0 : 66; // ambient: ~15 fps is plenty behind the dashboard
+    if (last && now - last < gap) return;
+    t += Math.min(now - (last || now - 16), 64) * .00022;
+    last = now;
+    draw();
+  }
+  addEventListener("resize", () => { size(); draw(); });
+  return {
+    mode(m) {
+      mode = m; c.dataset.mode = m; size();
+      cancelAnimationFrame(raf); last = 0;
+      if (still.matches) draw(); else raf = requestAnimationFrame(frame);
+    },
+  };
+})();
+silk.mode("full");
+
+// ---------- api ----------
+let inflight = 0;
+async function api(path, opts = {}) {
+  document.body.classList.toggle("busy", ++inflight > 0);
+  try {
+    const r = await fetch(new URL(path, location.origin), { credentials: "same-origin", ...opts });
+    const body = r.status === 204 ? {} : await r.json().catch(() => ({}));
+    if (r.status === 401 && me) { showLogin(body.login); throw Object.assign(new Error("signed out"), { status: 401 }); }
+    if (!r.ok) throw Object.assign(new Error(body.error || r.statusText), { status: r.status, login: body.login });
+    return body;
+  } finally {
+    document.body.classList.toggle("busy", --inflight > 0);
+  }
+}
+function toast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("on");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove("on"), 4800);
+}
+function countTo(el, n) {
+  const from = Number(el.dataset.n || 0);
+  el.dataset.n = n;
+  if (from === n || still.matches) { el.textContent = n; return; }
+  const t0 = performance.now(), dur = 900;
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = Math.round(from + (n - from) * e);
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// ---------- boot, sign-in ----------
+async function boot() {
+  const loginError = new URLSearchParams(location.search).get("login_error");
+  if (loginError) history.replaceState(null, "", location.pathname);
+  const minShow = new Promise((r) => setTimeout(r, 900)); // let the silk breathe; no flash
+  try {
+    const res = await api("/api/me");
+    await minShow;
+    showApp(res);
+  } catch (e) {
+    await minShow;
+    showLogin(e.login || "password", loginError);
+  }
+}
+
+function showLogin(mode, error) {
+  me = null;
+  clearTimeout(deployTimer); clearInterval(statusTimer);
+  document.querySelectorAll("dialog[open]").forEach((d) => d.close());
+  $("app").classList.remove("shown");
+  setTimeout(() => { if (!me) $("app").hidden = true; }, 700);
+  $("boot").classList.add("gone");
+  $("login").classList.remove("gone");
+  $("login-gitlab").hidden = mode !== "gitlab";
+  $("login-password").hidden = mode === "gitlab";
+  $("login-error").textContent = error || "";
+  silk.mode("full");
+}
+
+$("login-password").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  $("login-error").textContent = "";
+  try {
+    await api("/auth/password", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user: f.user.value, password: f.password.value }) });
+    f.password.value = "";
+    showApp(await api("/api/me"));
+  } catch (e) {
+    $("login-error").textContent = e.message;
+  }
+};
+
+$("logout").onclick = async () => {
+  await api("/auth/logout", { method: "POST" }).catch(() => {});
+  location.reload();
+};
+
+function showApp(res) {
+  me = res;
+  const u = me.user;
+  $("me-name").textContent = u.name || u.username;
+  $("me-role").textContent = u.id === 0 ? "setup sign-in" : ROLE[u.access_level] || "member";
+  $("avatar").replaceChildren(u.avatar_url ? h("img", { src: u.avatar_url, alt: "" }) : (u.name || u.username).slice(0, 1).toUpperCase());
+  $("open-settings").hidden = !me.can_configure;
+  $("boot").classList.add("gone");
+  $("login").classList.add("gone");
+  $("app").hidden = false;
+  requestAnimationFrame(() => requestAnimationFrame(() => $("app").classList.add("shown")));
+  silk.mode("ambient");
+  skeleton();
+  loadStatus();
+  loadDeploys();
+  clearInterval(statusTimer);
+  statusTimer = setInterval(loadStatus, 30000);
+}
+
+function skeleton() {
+  firstSites = true;
+  $("cards").replaceChildren(...STATES.map((s) => h("div", { class: "card", "data-state": s }, h("div", { class: "n", "data-n": 0 }, "0"), badge(s))));
+  $("sites").replaceChildren(...[0, 1, 2, 3].map(() => h("tr", {}, [18, 90, 80, 70, 30, 180, 30, 30, 200].map((wd) =>
+    h("td", {}, h("span", { class: "skel", style: `width:${wd}px` }))))));
+  $("deploys").replaceChildren(h("div", { class: "deploy" }, h("span", { class: "skel", style: "width:40%" }), h("span", { class: "skel", style: "width:70%" })));
+}
+
+// ---------- status ----------
+async function loadStatus() {
+  if (!me) return;
+  $("refresh").disabled = true;
+  try {
+    snap = await api("/api/status");
+    for (const name of [...selected]) if (!snap.sites.some((s) => s.name === name)) selected.delete(name);
+    render();
+  } catch (e) {
+    if (e.status === 503) { // not configured yet
+      $("sites").replaceChildren(h("tr", {}, h("td", { colspan: 9, class: "empty" }, me.can_configure
+        ? "Nothing to align yet. Open Settings to connect GitLab and add sites."
+        : "Not configured yet. Ask a project Maintainer to set it up.")));
+      if (me.can_configure && !$("settings").open) openSettings();
+    } else if (e.status !== 401) toast("Status failed: " + e.message);
+  } finally {
+    $("refresh").disabled = false;
+  }
+}
+
+function render() {
+  $("branch").textContent = snap.branch;
+  $("head").textContent = short(snap.head);
+  $("head").title = snap.head;
+  $("checked").textContent = new Date(snap.checked_at).toLocaleTimeString();
+
+  const counts = Object.fromEntries(STATES.map((s) => [s, 0]));
+  snap.sites.forEach((s) => counts[s.state]++);
+  document.querySelectorAll("#cards .card").forEach((card) => countTo(card.querySelector(".n"), counts[card.dataset.state]));
+
+  const tbody = $("sites");
+  tbody.classList.toggle("fresh", firstSites);
+  firstSites = false;
+  tbody.replaceChildren(...snap.sites.map((s, i) => {
+    const sc = s.schema || {};
+    const detail = s.error || [
+      sc.pending?.length ? "pending: " + sc.pending.join(", ") : "",
+      sc.unknown?.length ? "unknown: " + sc.unknown.join(", ") : "",
+    ].filter(Boolean).join(" · ");
+    return h("tr", { style: `--i:${i}` },
+      h("td", {}, h("input", { type: "checkbox", checked: selected.has(s.name), "aria-label": "Select " + s.name,
+        onchange: (e) => { e.target.checked ? selected.add(s.name) : selected.delete(s.name); syncSelection(); } })),
+      h("td", {}, h("button", { class: "link", title: "Version history", onclick: () => showHistory(s.name) }, s.name)),
+      h("td", {}, badge(s.state)),
+      h("td", { class: "mono", title: s.commit || "" }, short(s.commit) || "–"),
+      h("td", {}, s.behind < 0 ? "?" : s.behind),
+      h("td", { class: "mono" }, sc.db || "–"),
+      h("td", {}, sc.pending ? sc.pending.length : "–"),
+      h("td", {}, sc.unknown ? sc.unknown.length : "–"),
+      h("td", { class: "detail" }, detail));
+  }));
+  syncSelection();
+}
+
+function syncSelection() {
+  const n = selected.size;
+  $("deploy").disabled = n === 0 || !snap;
+  $("deploy").textContent = n ? `Deploy ${short(snap?.head)} to ${n} site${n > 1 ? "s" : ""}` : "Deploy";
+  $("all").checked = !!snap && snap.sites.length > 0 && n === snap.sites.length;
+}
+
+$("all").onchange = (e) => {
+  snap?.sites.forEach((s) => (e.target.checked ? selected.add(s.name) : selected.delete(s.name)));
+  if (snap) render();
+};
+$("select-stale").onclick = () => {
+  snap?.sites.forEach((s) => s.state !== "OK" && s.state !== "DOWN" && selected.add(s.name));
+  if (snap) render();
+};
+$("select-none").onclick = () => { selected.clear(); if (snap) render(); };
+$("refresh").onclick = () => { loadStatus(); loadDeploys(); };
+
+// ---------- deploy ----------
+$("deploy").onclick = () => {
+  const sites = snap.sites.filter((s) => selected.has(s.name));
+  const risky = sites.filter((s) => s.state === "DB_AHEAD" || s.state === "DOWN");
+  $("confirm-title").textContent = `Deploy ${snap.branch}@${short(snap.head)} to ${sites.length} site${sites.length > 1 ? "s" : ""}?`;
+  $("confirm-body").replaceChildren(...[
+    h("div", { class: "hint" }, "Each site gets its own GitLab pipeline: migrate the database, then roll out, all pinned to ",
+      h("span", { class: "mono" }, snap.head), me.user.id ? `. Pipelines run as ${me.user.username}.` : "."),
+    h("ul", {}, sites.map((s) => h("li", {}, badge(s.state, `${s.name} · ${LABEL[s.state]}`)))),
+    risky.length ? h("div", { class: "warnbox" },
+      "Check first: ", risky.map((s) => `${s.name} is ${LABEL[s.state]}`).join(", "),
+      ". A DB-ahead site was migrated by a newer build; a down site's pipeline will likely fail.") : null,
+  ].filter(Boolean));
+  $("confirm").returnValue = "";
+  $("confirm").showModal();
+};
+
+$("confirm").addEventListener("close", async () => {
+  if ($("confirm").returnValue !== "ok") return;
+  try {
+    const res = await api("/api/deploys", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sites: [...selected], sha: snap.head }),
+    });
+    const refused = res.deploy.runs.filter((r) => r.error).length;
+    toast(res.warning || (refused ? `${refused} of ${res.deploy.runs.length} pipeline(s) refused by GitLab` : `Triggered ${res.deploy.runs.length} pipeline(s)`));
+    selected.clear();
+    render();
+    loadDeploys();
+  } catch (e) {
+    if (e.status === 401) return;
+    toast(e.status === 409 ? "Main moved since you looked. Refreshed; review and confirm again." : "Deploy failed: " + e.message);
+    if (e.status === 409) loadStatus();
+  }
+});
+
+async function loadDeploys() {
+  clearTimeout(deployTimer);
+  if (!me) return;
+  let busy = false;
+  try {
+    const list = await api("/api/deploys");
+    busy = list.some((d) => d.runs.some((r) => ACTIVE.has(r.status)));
+    $("deploys").replaceChildren(...(list.length ? list.map((d) => {
+      const left = d.runs.filter((r) => ACTIVE.has(r.status)).length;
+      return h("div", { class: "deploy" },
+        h("div", { class: "head" },
+          h("b", {}, when(d.at)), h("span", {}, "by " + d.by),
+          h("span", { class: "mono", title: d.sha }, d.branch + "@" + short(d.sha)),
+          left ? badge("running", `${left} running`) : h("span", {}, "finished")),
+        h("div", { class: "runs" }, d.runs.map((r) => r.web_url
+          ? h("a", { href: r.web_url, target: "_blank", rel: "noopener", title: r.error || "" }, badge(r.status, `${r.site} · ${r.status}`))
+          : h("span", { title: r.error || "" }, badge(r.status, `${r.site} · ${r.status}`)))));
+    }) : [h("div", { class: "empty" }, "No deploys yet.")]));
+    if (wasBusy && !busy) loadStatus(); // pipelines just finished: show the new versions
+    wasBusy = busy;
+  } catch (e) {
+    if (e.status === 401) return;
+    toast("History failed: " + e.message);
+  }
+  deployTimer = setTimeout(loadDeploys, busy ? 3000 : 30000);
+}
+
+async function showHistory(site) {
+  $("history-title").textContent = site;
+  $("history-body").replaceChildren(h("div", { style: "display:grid;gap:10px;padding:8px 0" },
+    [70, 55, 62].map((p) => h("span", { class: "skel", style: `width:${p}%` }))));
+  $("history").showModal();
+  try {
+    const rows = await api(`/api/sites/${encodeURIComponent(site)}/versions`);
+    $("history-body").replaceChildren(rows.length ? h("table", {},
+      h("thead", {}, h("tr", {}, ["Seen", "State", "Commit", "Schema (DB)", "Migrations"].map((t) => h("th", {}, t)))),
+      h("tbody", { class: "fresh" }, rows.map((r, i) => h("tr", { style: `--i:${i}` },
+        h("td", {}, when(r.observed_at)), h("td", {}, badge(r.state)),
+        h("td", { class: "mono", title: r.commit }, short(r.commit) || "–"),
+        h("td", { class: "mono" }, r.schema_db || "–"),
+        h("td", { class: "detail" }, [
+          r.pending.length ? "pending: " + r.pending.join(", ") : "",
+          r.unknown.length ? "unknown: " + r.unknown.join(", ") : "",
+        ].filter(Boolean).join(" · ") || r.error || "–"))))) : h("div", { class: "empty" }, "No changes recorded yet."));
+  } catch (e) {
+    $("history-body").replaceChildren(h("div", { class: "empty" }, "Failed: " + e.message));
+  }
+}
+
+// ---------- settings ----------
+function siteRow(site = { name: "", version_url: "" }) {
+  const row = h("div", { class: "siterow" },
+    h("input", { type: "text", "aria-label": "Site name", placeholder: "site-a", value: site.name, required: true, pattern: "[A-Za-z0-9_\\-]{1,64}" }),
+    h("input", { type: "url", "aria-label": "Version URL", placeholder: "https://site-a.example.com/version", value: site.version_url, required: true }),
+    h("button", { type: "button", class: "icon", title: "Remove", "aria-label": "Remove site", onclick: () => row.remove() }, "✕"));
+  return row;
+}
+
+async function openSettings() {
+  const f = $("settings-form");
+  $("settings-err").textContent = "";
+  try {
+    const c = await api("/api/settings");
+    f.url.value = c.gitlab.url; f.project.value = c.gitlab.project; f.branch.value = c.gitlab.branch;
+    f.poll.value = c.poll_seconds; f.vtoken.value = "";
+    f.vtoken.placeholder = c.version_token_set ? "set · leave blank to keep" : "not set";
+    f.redirect.value = c.redirect_uri;
+    f.oauth_id.value = c.oauth_client_id; f.oauth_secret.value = "";
+    f.oauth_secret.placeholder = c.oauth_secret_set ? "set · leave blank to keep" : "not set";
+    openSettings.secretSet = c.oauth_secret_set;
+    f.user.value = c.admin_user; f.password.value = "";
+    $("fallback").hidden = me.user.id !== 0; // only matters while GitLab sign-in is off
+    $("site-rows").replaceChildren(...(c.sites.length ? c.sites : [undefined]).map(siteRow));
+    $("settings").showModal();
+  } catch (e) {
+    if (e.status !== 401) toast("Settings failed: " + e.message);
+  }
+}
+
+$("open-settings").onclick = openSettings;
+$("add-site").onclick = () => { const r = siteRow(); $("site-rows").append(r); r.querySelector("input").focus(); };
+$("settings-cancel").onclick = () => $("settings").close();
+$("copy-redirect").onclick = async () => {
+  try { await navigator.clipboard.writeText($("settings-form").redirect.value); toast("Redirect URI copied"); }
+  catch { $("settings-form").redirect.select(); }
+};
+$("settings-form").onsubmit = async (ev) => {
+  ev.preventDefault();
+  const f = ev.target;
+  const body = {
+    gitlab: { url: f.url.value, project: f.project.value, branch: f.branch.value },
+    poll_seconds: Number(f.poll.value),
+    sites: [...$("site-rows").children].map((r) => ({ name: r.children[0].value, version_url: r.children[1].value })),
+    oauth_client_id: f.oauth_id.value,
+  };
+  if (f.vtoken.value) body.version_token = f.vtoken.value;
+  if (f.oauth_secret.value) body.oauth_secret = f.oauth_secret.value;
+  if (me.user.id === 0) {
+    body.admin_user = f.user.value;
+    if (f.password.value) body.password = f.password.value;
+  }
+  try {
+    await api("/api/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    $("settings").close();
+    const gitlabOn = body.gitlab.url && body.oauth_client_id && (body.oauth_secret || openSettings.secretSet);
+    if (me.user.id === 0 && gitlabOn) {
+      toast("GitLab sign-in is on. Sign in with GitLab.");
+      setTimeout(() => location.reload(), 1600);
+      return;
+    }
+    toast("Settings saved");
+    loadStatus();
+  } catch (e) {
+    $("settings-err").textContent = e.message;
+  }
+};
+
+boot();
+</script>
+</body>
+</html>

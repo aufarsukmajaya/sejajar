@@ -1,0 +1,11 @@
+{
+  "gitlab": {
+    "url": "https://gitlab.example.com",
+    "project": "group/app",
+    "branch": "main"
+  },
+  "sites": [
+    { "name": "site-a", "version_url": "https://site-a.example.com/version" },
+    { "name": "site-b", "version_url": "https://site-b.example.com/version" }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "gitlab": { "url": "http://127.0.0.1:9999", "project": "acme/app", "branch": "main" },
+  "oauth_client_id": "sejajar-demo",
+  "oauth_secret": "demo-secret",
+  "sites": [
+    { "name": "jakarta",  "version_url": "http://127.0.0.1:9999/sites/jakarta/version" },
+    { "name": "surabaya", "version_url": "http://127.0.0.1:9999/sites/surabaya/version" },
+    { "name": "medan",    "version_url": "http://127.0.0.1:9999/sites/medan/version" },
+    { "name": "bandung",  "version_url": "http://127.0.0.1:9999/sites/bandung/version" },
+    { "name": "makassar", "version_url": "http://127.0.0.1:9999/sites/makassar/version" }
+  ]
+}

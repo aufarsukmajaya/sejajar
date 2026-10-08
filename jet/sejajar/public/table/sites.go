@@ -64,7 +64,7 @@ func newSitesTableImpl(schemaName, tableName, alias string) sitesTable {
 		VersionURLColumn = postgres.StringColumn("version_url")
 		allColumns       = postgres.ColumnList{NameColumn, VersionURLColumn}
 		mutableColumns   = postgres.ColumnList{VersionURLColumn}
-		defaultColumns   = postgres.ColumnList{}
+		defaultColumns   = postgres.ColumnList{VersionURLColumn}
 	)
 
 	return sitesTable{

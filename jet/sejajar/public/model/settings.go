@@ -12,16 +12,20 @@ import (
 )
 
 type Settings struct {
-	ID                bool `sql:"primary_key"`
-	GitlabURL         string
-	GitlabProject     string
-	GitlabBranch      string
-	VersionToken      string
-	PollSeconds       int32
-	AdminUser         string
-	AdminPasswordHash string
-	UpdatedAt         time.Time
-	UpdatedBy         string
-	OAuthClientID     string
-	OAuthClientSecret string
+	ID                     bool `sql:"primary_key"`
+	GitlabURL              string
+	GitlabProject          string
+	GitlabBranch           string
+	EnvironmentTemplate    string
+	APIEnvironmentTemplate string
+	PipelineInputs         string
+	TriggerAs              string
+	VersionToken           string
+	PollSeconds            int32
+	AdminUser              string
+	AdminPasswordHash      string
+	OAuthClientID          string
+	OAuthClientSecret      string
+	UpdatedAt              time.Time
+	UpdatedBy              string
 }

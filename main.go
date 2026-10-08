@@ -4,6 +4,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -20,7 +21,8 @@ import (
 )
 
 func main() {
-	only := flag.String("sites", "", "status/deploy: comma-separated site names (default: all)")
+	onlySites := flag.String("sites", "", "status/deploy: comma-separated site names (default: all)")
+	onlyServices := flag.String("services", "", "status/deploy: comma-separated services, name+postfix (default: all; deploy skips jobs unless named)")
 	yes := flag.Bool("yes", false, "deploy: actually trigger pipelines (default is dry run)")
 	addr := flag.String("addr", ":8090", "serve: listen address")
 	flag.Usage = func() {
@@ -73,18 +75,15 @@ env: DATABASE_URL (all commands), GITLAB_TOKEN (serve, status, deploy)`)
 		fail(errors.New("GITLAB_TOKEN is not set (needs api scope)"))
 	}
 	f := &Fleet{store: store, token: token}
-	var names []string
-	if *only != "" {
-		names = strings.Split(*only, ",")
-	}
+	sites, services := splitList(*onlySites), splitList(*onlyServices)
 
 	switch flag.Arg(0) {
 	case "serve":
 		runServer(ctx, f, *addr)
 	case "status":
-		printStatus(ctx, f, names)
+		printStatus(ctx, f, sites, services)
 	case "deploy":
-		runDeploy(ctx, f, names, *yes)
+		runDeploy(ctx, f, sites, services, *yes)
 	default:
 		flag.Usage()
 		os.Exit(2)
@@ -150,39 +149,49 @@ func setPassword(ctx context.Context, store *Store, pw string) {
 	}
 }
 
-func printStatus(ctx context.Context, f *Fleet, names []string) {
+func splitList(s string) []string {
+	var out []string
+	for x := range strings.SplitSeq(s, ",") {
+		if x = strings.TrimSpace(x); x != "" {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+// printStatus prints one line per (site, service) cell; it exits 1 when any
+// shown cell is not OK, so CI can use it as a gate.
+func printStatus(ctx context.Context, f *Fleet, sites, services []string) {
+	cfg, _, err := f.load(ctx)
+	if err != nil {
+		fail(err)
+	}
+	if _, err := cfg.targetsFor(sites, services); err != nil {
+		fail(err)
+	}
 	snap, err := f.Snapshot(ctx)
 	if err != nil {
 		fail(err)
 	}
-	want := map[string]bool{}
-	for _, n := range names {
-		want[strings.TrimSpace(n)] = true
-	}
-	for n := range want {
-		if !slices.ContainsFunc(snap.Sites, func(s SiteStatus) bool { return s.Name == n }) {
-			fail(fmt.Errorf("unknown site %q", n))
-		}
-	}
 
 	fmt.Printf("%s head: %s\n\n", snap.Branch, short(snap.Head))
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "SITE\tSTATE\tCOMMIT\tBEHIND\tSCHEMA(db)\tPENDING\tUNKNOWN\tERROR")
+	fmt.Fprintln(tw, "SITE\tSERVICE\tKIND\tSTATE\tCOMMIT\tBEHIND\tFROM\tSCHEMA(db)\tPENDING\tUNKNOWN\tERROR")
 	bad := false
-	for _, s := range snap.Sites {
-		if len(want) > 0 && !want[s.Name] {
+	for _, c := range snap.Cells {
+		if len(sites) > 0 && !slices.Contains(sites, c.Site) || len(services) > 0 && !slices.Contains(services, c.Service+c.Postfix) {
 			continue
 		}
-		bad = bad || s.State != "OK"
-		if s.Schema == nil {
-			fmt.Fprintf(tw, "%s\t%s\t-\t-\t-\t-\t-\t%s\n", s.Name, s.State, s.Error)
-			continue
+		bad = bad || c.State != "OK"
+		behind, db, pending, unknown := "?", "-", "-", "-"
+		if c.Behind >= 0 {
+			behind = fmt.Sprint(c.Behind)
 		}
-		behind := "?"
-		if s.Behind >= 0 {
-			behind = fmt.Sprint(s.Behind)
+		if c.Schema != nil {
+			db, pending, unknown = c.Schema.DB, fmt.Sprint(len(c.Schema.Pending)), fmt.Sprint(len(c.Schema.Unknown))
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\t%d\t\n", s.Name, s.State, short(s.Commit), behind, s.Schema.DB, len(s.Schema.Pending), len(s.Schema.Unknown))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", c.Site, c.Service+c.Postfix, c.Kind, c.State,
+			cmp.Or(short(c.Commit), "-"), behind, c.Source, db, pending, unknown, c.Error)
 	}
 	tw.Flush()
 	if bad {
@@ -191,12 +200,12 @@ func printStatus(ctx context.Context, f *Fleet, names []string) {
 }
 
 // runDeploy is the terminal deploy, saved to the same history the dashboard shows.
-func runDeploy(ctx context.Context, f *Fleet, names []string, yes bool) {
+func runDeploy(ctx context.Context, f *Fleet, sites, services []string, yes bool) {
 	cfg, gl, err := f.load(ctx)
 	if err != nil {
 		fail(err)
 	}
-	sites, err := pick(cfg.Sites, names)
+	targets, err := cfg.targetsFor(sites, services)
 	if err != nil {
 		fail(err)
 	}
@@ -204,15 +213,15 @@ func runDeploy(ctx context.Context, f *Fleet, names []string, yes bool) {
 	if err != nil {
 		fail(err)
 	}
-	fmt.Printf("deploy %s@%s to %d site(s)\n", cfg.GitLab.Branch, short(head), len(sites))
+	fmt.Printf("deploy %s@%s: %d pipeline(s)\n", cfg.GitLab.Branch, short(head), len(targets))
 	if !yes {
-		for _, s := range sites {
-			fmt.Printf("  would trigger: SITE=%s DEPLOY_SHA=%s\n", s.Name, head)
+		for _, t := range targets {
+			fmt.Printf("  would trigger: %s %s\n", t.Site, t.Service+t.Postfix)
 		}
 		fmt.Println("dry run; pass -yes to trigger")
 		return
 	}
-	d, err := f.Deploy(ctx, "cli", names, head, "")
+	d, err := f.Deploy(ctx, "cli", targets, head, "")
 	if err != nil {
 		fail(err)
 	}
@@ -221,12 +230,13 @@ func runDeploy(ctx context.Context, f *Fleet, names []string, yes bool) {
 	}
 	failed := 0
 	for _, r := range d.Runs {
+		name := r.Site + " " + r.Service + r.Postfix
 		if r.Error != "" {
 			failed++
-			fmt.Printf("  %-20s FAILED %s\n", r.Site, r.Error)
+			fmt.Printf("  %-40s FAILED %s\n", name, r.Error)
 			continue
 		}
-		fmt.Printf("  %-20s %s\n", r.Site, r.WebURL)
+		fmt.Printf("  %-40s %s\n", name, r.WebURL)
 	}
 	if failed > 0 {
 		os.Exit(1)

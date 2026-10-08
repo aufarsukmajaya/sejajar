@@ -1,7 +1,10 @@
-// Package mock fakes the slice of GitLab that sejajar calls, plus a fleet
-// of sites serving /version, so the whole flow runs locally and in tests.
-// A triggered pipeline "deploys" after Delay: the site moves to DEPLOY_SHA and
-// its DB gains that commit's migrations.
+// Package mock fakes the slice of GitLab that sejajar calls, plus a fleet of
+// sites whose APIs serve /version, so the whole flow runs locally and in tests.
+//
+// Each site has one database shared by its APIs and runs a set of services.
+// A triggered pipeline "deploys" one service to one site after Delay: an API
+// migrates the site's DB first, then the service moves to the pipeline's
+// commit and GitLab records a deployment to "<site>-<service><postfix>".
 package mock
 
 import (
@@ -45,6 +48,28 @@ var Users = []User{
 	{10, "luar", "Orang Luar", 0},
 }
 
+// SiteNames are the demo sites, in the order sites.demo.json lists them.
+var SiteNames = []string{"bandung", "jakarta", "makassar", "medan", "surabaya"}
+
+// Service mirrors a sites.demo.json service row.
+type Service struct {
+	Name, Postfix, Kind string
+	Sites               []string // empty = every site
+}
+
+func (s Service) ID() string { return s.Name + s.Postfix }
+
+// Services are the demo rows. api-core-partner is a postfixed variant that
+// runs on two sites only.
+var Services = []Service{
+	{"api-core", "", "api", nil},
+	{"api-core", "-partner", "api", []string{"jakarta", "surabaya"}},
+	{"api-report", "", "api", nil},
+	{"worker-mailer", "", "worker", nil},
+	{"worker-sync", "", "worker", nil},
+	{"job-backfill", "", "job", nil},
+}
+
 type grant struct {
 	user                User
 	challenge, redirect string
@@ -56,69 +81,112 @@ type commit struct {
 }
 
 type site struct {
-	commit  string
-	applied []string
-	down    bool
+	applied []string // the site DB's migrations, shared by its APIs
+	down    bool     // the DB is unreachable: APIs answer 503, API deploys fail
+}
+
+type deployment struct {
+	ID        int64     `json:"id"`
+	SHA       string    `json:"sha"`
+	UpdatedAt time.Time `json:"updated_at"`
+	pipeline  string
 }
 
 type pipeline struct {
 	ID     int64  `json:"id"`
+	SHA    string `json:"sha"`
 	Status string `json:"status"`
 	WebURL string `json:"web_url"`
 	User   struct {
 		Username string `json:"username"`
 	} `json:"user"`
-	site string
-	sha  string
+	site    string
+	service Service
+	inputs  map[string]string
 }
 
 type Server struct {
-	Delay     time.Duration
-	TokenTTL  time.Duration // how long an OAuth access token lives
-	mu        sync.Mutex
-	codes     map[string]grant
-	access    map[string]User // OAuth access token -> user
-	refresh   map[string]User
-	commits   []commit // oldest first; the last one is the branch head
-	sites     map[string]*site
-	pipelines map[int64]*pipeline
-	nextID    int64
-	mux       *http.ServeMux
+	Delay       time.Duration
+	TokenTTL    time.Duration // how long an OAuth access token lives
+	mu          sync.Mutex
+	codes       map[string]grant
+	access      map[string]User // OAuth access token -> user
+	refresh     map[string]User
+	commits     []commit // oldest first; the last one is the branch head
+	sites       map[string]*site
+	deployments map[string][]deployment // GitLab environment -> successful deployments, oldest first
+	pipelines   map[int64]*pipeline
+	nextID      int64
+	mux         *http.ServeMux
 }
 
-// SiteNames are the demo sites, in the order sites.demo.json lists them.
-var SiteNames = []string{"jakarta", "surabaya", "medan", "bandung", "makassar"}
+// Env is the GitLab environment a deploy of svc to site records.
+func Env(site string, svc Service) string { return site + "-" + svc.ID() }
 
 func New() *Server {
 	migs := []string{
 		"M20260105090000_init",
-		"M20260302100000_invoice_department",
-		"m20260611120000_invoice_attachment",
+		"M20260302100000_orders",
+		"m20260611120000_order_attachment",
 		"M20260913120000_job_runs",
 	}
-	s := &Server{Delay: 4 * time.Second, TokenTTL: 2 * time.Hour, sites: map[string]*site{}, pipelines: map[int64]*pipeline{}, nextID: 1000,
-		codes: map[string]grant{}, access: map[string]User{}, refresh: map[string]User{}}
+	s := &Server{Delay: 4 * time.Second, TokenTTL: 2 * time.Hour, sites: map[string]*site{}, pipelines: map[int64]*pipeline{},
+		deployments: map[string][]deployment{}, nextID: 1000, codes: map[string]grant{}, access: map[string]User{}, refresh: map[string]User{}}
 	for i, n := range []int{1, 2, 2, 3, 3, 4} { // how many migrations each commit carries
 		s.commits = append(s.commits, commit{sha: fakeSHA(i), migrations: slices.Clone(migs[:n])})
 	}
-	sha := func(i int) string { return s.commits[i].sha }
-	s.sites["jakarta"] = &site{commit: sha(5), applied: slices.Clone(migs)}                  // OK
-	s.sites["surabaya"] = &site{commit: sha(3), applied: slices.Clone(migs[:3])}             // BEHIND by 2
-	s.sites["medan"] = &site{commit: sha(5), applied: slices.Clone(migs[:3])}                // SCHEMA_PENDING
-	s.sites["bandung"] = &site{commit: sha(1), applied: slices.Clone(migs[:3])}              // DB_AHEAD (rolled back)
-	s.sites["makassar"] = &site{commit: sha(4), applied: slices.Clone(migs[:3]), down: true} // DOWN
+
+	// What each site runs: commit index per service ID (-1 = never deployed).
+	// The head is commit 5.
+	type plan struct {
+		db      int // how many migrations the site DB has
+		down    bool
+		running map[string]int
+	}
+	all := func(i int) map[string]int {
+		m := map[string]int{}
+		for _, svc := range Services {
+			m[svc.ID()] = i
+		}
+		return m
+	}
+	with := func(m map[string]int, kv ...any) map[string]int {
+		for k := 0; k < len(kv); k += 2 {
+			m[kv[k].(string)] = kv[k+1].(int)
+		}
+		return m
+	}
+	plans := map[string]plan{
+		"jakarta":  {4, false, all(5)},                                                         // everything aligned
+		"surabaya": {3, false, all(3)},                                                         // everything 2 behind
+		"medan":    {3, false, with(all(5), "job-backfill", -1)},                               // APIs: schema pending; job never ran
+		"bandung":  {3, false, with(all(5), "api-core", 1, "api-report", 1, "worker-sync", 2)}, // APIs rolled back: DB ahead
+		"makassar": {3, true, with(all(4), "job-backfill", -1)},                                // DB down: APIs down, workers 1 behind
+	}
+	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	for name, p := range plans {
+		s.sites[name] = &site{applied: slices.Clone(migs[:p.db]), down: p.down}
+		for _, svc := range Services {
+			if i, ok := p.running[svc.ID()]; ok && i >= 0 && runsOn(svc, name) {
+				s.nextID++
+				env := Env(name, svc)
+				s.deployments[env] = append(s.deployments[env], deployment{ID: s.nextID, SHA: s.commits[i].sha, UpdatedAt: at})
+			}
+		}
+	}
 
 	m := http.NewServeMux()
 	m.HandleFunc("GET /api/v4/projects/{project}/repository/branches/{branch}", s.branch)
 	m.HandleFunc("GET /api/v4/projects/{project}/repository/compare", s.compare)
 	m.HandleFunc("POST /api/v4/projects/{project}/pipeline", s.createPipeline)
 	m.HandleFunc("GET /api/v4/projects/{project}/pipelines/{id}", s.getPipeline)
+	m.HandleFunc("GET /api/v4/projects/{project}/deployments", s.listDeployments)
 	m.HandleFunc("GET /pipelines/{id}", s.getPipeline)
 	m.HandleFunc("GET /api/v4/projects/{project}/members/all/{id}", s.member)
 	m.HandleFunc("GET /api/v4/user", s.currentUser)
 	m.HandleFunc("GET /oauth/authorize", s.authorize)
 	m.HandleFunc("POST /oauth/token", s.token)
-	m.HandleFunc("GET /sites/{site}/version", s.version)
+	m.HandleFunc("GET /sites/{site}/{service}/version", s.version)
 	m.HandleFunc("POST /mock/push", s.push)
 	m.HandleFunc("POST /mock/sites/{site}/toggle", s.toggle)
 	s.mux = m
@@ -126,6 +194,10 @@ func New() *Server {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
+
+func runsOn(svc Service, site string) bool {
+	return len(svc.Sites) == 0 || slices.Contains(svc.Sites, site)
+}
 
 func fakeSHA(i int) string {
 	h := sha1.Sum([]byte("commit-" + strconv.Itoa(i)))
@@ -136,10 +208,21 @@ func (s *Server) index(sha string) int {
 	return slices.IndexFunc(s.commits, func(c commit) bool { return c.sha == sha })
 }
 
+func (s *Server) head() string { return s.commits[len(s.commits)-1].sha }
+
+// running is the commit a service last deployed successfully on a site, "" if never.
+func (s *Server) running(site string, svc Service) string {
+	ds := s.deployments[Env(site, svc)]
+	if len(ds) == 0 {
+		return ""
+	}
+	return ds[len(ds)-1].SHA
+}
+
 func (s *Server) branch(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	reply(w, 200, map[string]any{"commit": map[string]string{"id": s.commits[len(s.commits)-1].sha}})
+	reply(w, 200, map[string]any{"commit": map[string]string{"id": s.head()}})
 }
 
 func (s *Server) compare(w http.ResponseWriter, r *http.Request) {
@@ -157,54 +240,84 @@ func (s *Server) compare(w http.ResponseWriter, r *http.Request) {
 	reply(w, 200, map[string]any{"commits": commits})
 }
 
+// listDeployments answers ?environment=&status=success&sort=desc&per_page=1.
+func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ds := s.deployments[r.URL.Query().Get("environment")]
+	out := []map[string]any{}
+	for _, d := range slices.Backward(ds) {
+		out = append(out, map[string]any{"id": d.ID, "sha": d.SHA, "status": "success", "updated_at": d.UpdatedAt,
+			"deployable": map[string]any{"pipeline": map[string]string{"web_url": d.pipeline}}})
+		if len(out) == 1 {
+			break
+		}
+	}
+	reply(w, 200, out)
+}
+
+// createPipeline reads SITE, SERVICE and POSTFIX from spec:inputs or CI variables.
 func (s *Server) createPipeline(w http.ResponseWriter, r *http.Request) {
 	var body struct {
+		Ref       string                        `json:"ref"`
+		Inputs    map[string]string             `json:"inputs"`
 		Variables []struct{ Key, Value string } `json:"variables"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		reply(w, 400, map[string]string{"message": err.Error()})
 		return
 	}
-	vars := map[string]string{}
-	for _, v := range body.Variables {
-		vars[v.Key] = v.Value
+	vals := body.Inputs
+	if vals == nil {
+		vals = map[string]string{}
+		for _, v := range body.Variables {
+			vals[v.Key] = v.Value
+		}
 	}
+	i := slices.IndexFunc(Services, func(x Service) bool { return x.Name == vals["SERVICE"] && x.Postfix == vals["POSTFIX"] })
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.sites[vals["SITE"]]; !ok || i < 0 || !runsOn(Services[i], vals["SITE"]) {
+		reply(w, 400, map[string]string{"message": fmt.Sprintf("no such deploy target: %v", vals)})
+		return
+	}
 	by := "deploy-bot"
 	if u, ok := s.access[bearer(r)]; ok {
 		if u.Level < 30 {
-			s.mu.Unlock()
 			reply(w, 403, map[string]string{"message": "403 Forbidden - " + u.Username + " is not allowed to run pipelines"})
 			return
 		}
 		by = u.Username
 	}
 	s.nextID++
-	p := &pipeline{ID: s.nextID, Status: "running", WebURL: fmt.Sprintf("http://%s/pipelines/%d", r.Host, s.nextID), site: vars["SITE"], sha: vars["DEPLOY_SHA"]}
+	p := &pipeline{ID: s.nextID, SHA: s.head(), Status: "running", WebURL: fmt.Sprintf("http://%s/pipelines/%d", r.Host, s.nextID),
+		site: vals["SITE"], service: Services[i], inputs: vals}
 	p.User.Username = by
 	s.pipelines[p.ID] = p
-	out := *p
-	s.mu.Unlock()
-
 	time.AfterFunc(s.Delay, func() { s.finish(p) })
-	reply(w, 201, out)
+	reply(w, 201, *p)
 }
 
-// finish plays the deploy job: migrate the DB, then roll the code.
+// finish plays the deploy job: an API migrates the site DB, then the service
+// rolls to the pipeline's commit and GitLab records the deployment.
 func (s *Server) finish(p *pipeline) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	st, i := s.sites[p.site], s.index(p.sha)
-	if st == nil || st.down || i < 0 {
+	st, i := s.sites[p.site], s.index(p.SHA)
+	if p.service.Kind == "api" && st.down {
 		p.Status = "failed"
 		return
 	}
-	for _, m := range s.commits[i].migrations {
-		if !slices.Contains(st.applied, m) {
-			st.applied = append(st.applied, m)
+	if p.service.Kind == "api" {
+		for _, m := range s.commits[i].migrations {
+			if !slices.Contains(st.applied, m) {
+				st.applied = append(st.applied, m)
+			}
 		}
 	}
-	st.commit = p.sha
+	s.nextID++
+	env := Env(p.site, p.service)
+	s.deployments[env] = append(s.deployments[env], deployment{ID: s.nextID, SHA: p.SHA, UpdatedAt: time.Now().UTC(), pipeline: p.WebURL})
 	p.Status = "success"
 }
 
@@ -220,20 +333,26 @@ func (s *Server) getPipeline(w http.ResponseWriter, r *http.Request) {
 	reply(w, 200, p)
 }
 
-// version implements VERSION_API.md for a fake site.
+// version implements VERSION_API.md for one API (service = name+postfix) on a site.
 func (s *Server) version(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st, ok := s.sites[r.PathValue("site")]
-	if !ok {
-		reply(w, 404, map[string]string{"error": "no such site"})
+	i := slices.IndexFunc(Services, func(x Service) bool { return x.ID() == r.PathValue("service") && x.Kind == "api" })
+	if !ok || i < 0 || !runsOn(Services[i], r.PathValue("site")) {
+		reply(w, 404, map[string]string{"error": "no such api"})
+		return
+	}
+	sha := s.running(r.PathValue("site"), Services[i])
+	if sha == "" {
+		reply(w, 404, map[string]string{"error": "not deployed"})
 		return
 	}
 	if st.down {
-		reply(w, 503, map[string]string{"commit": st.commit, "error": "db unreachable"})
+		reply(w, 503, map[string]string{"commit": sha, "error": "db unreachable"})
 		return
 	}
-	code := s.commits[s.index(st.commit)].migrations
+	code := s.commits[s.index(sha)].migrations
 	pending, unknown, last := []string{}, []string{}, ""
 	for _, m := range code {
 		if slices.Contains(st.applied, m) {
@@ -248,7 +367,7 @@ func (s *Server) version(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	reply(w, 200, map[string]any{
-		"commit":   st.commit,
+		"commit":   sha,
 		"built_at": "2026-10-01T00:00:00Z",
 		"schema":   map[string]any{"code": code[len(code)-1], "db": last, "pending": pending, "unknown": unknown},
 	})
@@ -264,7 +383,7 @@ func (s *Server) push(w http.ResponseWriter, r *http.Request) {
 	reply(w, 201, map[string]string{"head": fakeSHA(n)})
 }
 
-// toggle takes a site down or brings it back.
+// toggle takes a site's DB down or brings it back.
 func (s *Server) toggle(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -275,6 +394,16 @@ func (s *Server) toggle(w http.ResponseWriter, r *http.Request) {
 	}
 	st.down = !st.down
 	reply(w, 200, map[string]bool{"down": st.down})
+}
+
+// Inputs are the values a pipeline was created with.
+func (s *Server) Inputs(id int64) map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p, ok := s.pipelines[id]; ok {
+		return p.inputs
+	}
+	return nil
 }
 
 // TriggeredBy is the username a pipeline was created as.

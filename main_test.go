@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -36,16 +37,73 @@ func TestClassify(t *testing.T) {
 	}
 }
 
-func TestPick(t *testing.T) {
-	all := []Site{{Name: "a"}, {Name: "b"}}
-	if got, _ := pick(all, nil); len(got) != 2 {
-		t.Fatalf("no names should return all, got %v", got)
+func testConfig() *Config {
+	return &Config{PollSeconds: 60, Sites: []Site{{Name: "a"}, {Name: "b"}}, Services: []Service{
+		{Name: "api", Kind: "api"},
+		{Name: "api", Postfix: "-x", Kind: "api", Sites: []string{"b"}},
+		{Name: "worker", Kind: "worker"},
+		{Name: "job", Kind: "job"},
+	}}
+}
+
+func TestTargetsFor(t *testing.T) {
+	c := testConfig()
+	ids := func(ts []Target) []string {
+		var out []string
+		for _, t := range ts {
+			out = append(out, t.Site+"/"+t.Service+t.Postfix)
+		}
+		return out
 	}
-	if got, _ := pick(all, []string{" b"}); len(got) != 1 || got[0].Name != "b" {
-		t.Fatalf("pick b = %v", got)
+	// No filter: every cell except jobs; the postfix variant only on its site.
+	got, _ := c.targetsFor(nil, nil)
+	if want := []string{"a/api", "b/api", "b/api-x", "a/worker", "b/worker"}; !slices.Equal(ids(got), want) {
+		t.Errorf("all = %v, want %v", ids(got), want)
 	}
-	if _, err := pick(all, []string{"zzz"}); err == nil {
-		t.Fatal("unknown site must error")
+	// Jobs only when named.
+	got, _ = c.targetsFor([]string{"a"}, []string{"job", "api-x"})
+	if want := []string{"a/job"}; !slices.Equal(ids(got), want) {
+		t.Errorf("a + job,api-x = %v, want %v", ids(got), want)
+	}
+	if _, err := c.targetsFor([]string{"zzz"}, nil); err == nil {
+		t.Error("unknown site must error")
+	}
+	if _, err := c.targetsFor(nil, []string{"zzz"}); err == nil {
+		t.Error("unknown service must error")
+	}
+}
+
+func TestResolve(t *testing.T) {
+	c := testConfig()
+	got, err := c.resolve([]Target{{"b", "api", "-x"}, {"b", "api", "-x"}, {"a", "worker", ""}})
+	if err != nil || len(got) != 2 {
+		t.Fatalf("resolve = %v, %v; want 2 deduped targets", got, err)
+	}
+	if _, err := c.resolve([]Target{{"a", "api", "-x"}}); err == nil {
+		t.Error("a postfix variant must not deploy to a site it doesn't run on")
+	}
+}
+
+func TestValidate(t *testing.T) {
+	cases := map[string]func(c *Config){
+		"colliding deployment names": func(c *Config) {
+			c.Services = append(c.Services, Service{Name: "api-x", Kind: "api"}) // api + -x is also api-x
+		},
+		"unknown site on a service": func(c *Config) { c.Services[1].Sites = []string{"zzz"} },
+		"bad kind":                  func(c *Config) { c.Services[0].Kind = "cron" },
+		"bad input name":            func(c *Config) { c.PipelineInputs = map[string]string{"BAD-NAME": "x"} },
+		"version url not http":      func(c *Config) { c.Sites[0].VersionURL = "{site}.example.com/version" },
+		"bad trigger":               func(c *Config) { c.TriggerAs = "webhook" },
+	}
+	if err := testConfig().validate(); err != nil {
+		t.Fatalf("valid config: %v", err)
+	}
+	for name, breakIt := range cases {
+		c := testConfig()
+		breakIt(c)
+		if err := c.validate(); err == nil {
+			t.Errorf("%s: no error", name)
+		}
 	}
 }
 
@@ -73,10 +131,10 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if _, err := store.db.ExecContext(ctx, "TRUNCATE deploys, deploy_runs, site_versions, sites, sessions RESTART IDENTITY"); err != nil {
+	if _, err := store.db.ExecContext(ctx, "TRUNCATE deploys, deploy_runs, site_versions, sites, services, sessions RESTART IDENTITY"); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveConfig(ctx, &Config{PollSeconds: 60}, new(""), new(""), "test"); err != nil {
+	if err := store.SaveConfig(ctx, &Config{PollSeconds: 60, EnvironmentTemplate: "{site}-{service}{postfix}", TriggerAs: "inputs"}, new(""), new(""), "test"); err != nil {
 		t.Fatal(err)
 	}
 	hash, _ := hashPassword("pw-12345")
@@ -116,10 +174,10 @@ func TestEndToEnd(t *testing.T) {
 		}
 		return resp
 	}
-	admin := browser()
+	as := browser() // whose session call() uses
 	call := func(method, path, contentType string, body, out any) int {
 		t.Helper()
-		return do(admin, method, api.URL+path, contentType, body, out).StatusCode
+		return do(as, method, api.URL+path, contentType, body, out).StatusCode
 	}
 
 	// sign in with the local password
@@ -138,13 +196,19 @@ func TestEndToEnd(t *testing.T) {
 	if code := call("GET", "/api/status", "", nil, nil); code != http.StatusServiceUnavailable {
 		t.Fatalf("unconfigured status: %d, want 503", code)
 	}
-	settings := map[string]any{"gitlab": map[string]string{"url": gl.URL, "project": "acme/app", "branch": "main"},
-		"poll_seconds": 30, "version_token": "vt"}
 	var sites []map[string]string
 	for _, n := range mock.SiteNames {
-		sites = append(sites, map[string]string{"name": n, "version_url": gl.URL + "/sites/" + n + "/version"})
+		sites = append(sites, map[string]string{"name": n, "version_url": gl.URL + "/sites/{site}/{service}{postfix}/version"})
 	}
-	settings["sites"] = append(slices.Clone(sites), map[string]string{"name": "bad name", "version_url": gl.URL})
+	var services []map[string]any
+	for _, s := range mock.Services {
+		services = append(services, map[string]any{"name": s.Name, "postfix": s.Postfix, "kind": s.Kind, "sites": s.Sites})
+	}
+	settings := map[string]any{"gitlab": map[string]string{"url": gl.URL, "project": "acme/app", "branch": "main"},
+		"poll_seconds": 30, "version_token": "vt", "services": services,
+		"environment_template": "{site}-{service}{postfix}", "trigger_as": "inputs",
+		"pipeline_inputs": map[string]string{"SITE": "{site}", "SERVICE": "{service}", "POSTFIX": "{postfix}"}}
+	settings["sites"] = append(slices.Clone(sites), map[string]string{"name": "bad name"})
 	if code := call("PUT", "/api/settings", "application/json", settings, nil); code != http.StatusBadRequest {
 		t.Errorf("invalid site name: %d, want 400", code)
 	}
@@ -156,23 +220,52 @@ func TestEndToEnd(t *testing.T) {
 	if code := call("PUT", "/api/settings", "application/json", settings, &view); code != 200 {
 		t.Fatalf("save settings: %d %v", code, view)
 	}
-	if _, leaked := view["version_token"]; leaked || view["version_token_set"] != true || view["poll_seconds"] != 30.0 || len(view["sites"].([]any)) != 5 {
+	if _, leaked := view["version_token"]; leaked || view["version_token_set"] != true || view["poll_seconds"] != 30.0 ||
+		len(view["sites"].([]any)) != 5 || len(view["services"].([]any)) != 6 {
 		t.Errorf("settings view = %v", view)
 	}
 
-	// 1. status classifies every demo site
+	// 1. status: one cell per (site, service), APIs from /version, the rest from GitLab deployments
 	var snap Snapshot
 	if code := call("GET", "/api/status", "", nil, &snap); code != 200 {
 		t.Fatalf("status: %d", code)
 	}
-	want := map[string]string{"jakarta": "OK", "surabaya": "BEHIND", "medan": "SCHEMA_PENDING", "bandung": "DB_AHEAD", "makassar": "DOWN"}
-	for _, s := range snap.Sites {
-		if s.State != want[s.Name] {
-			t.Errorf("%s: state %s, want %s", s.Name, s.State, want[s.Name])
+	cells := func() map[string]Cell {
+		out := map[string]Cell{}
+		for _, c := range snap.Cells {
+			out[c.Site+"/"+c.Service+c.Postfix] = c
 		}
-		if s.Name == "surabaya" && s.Behind != 2 {
-			t.Errorf("surabaya behind %d, want 2", s.Behind)
+		return out
+	}
+	want := map[string]string{}
+	for _, s := range mock.SiteNames {
+		for _, svc := range []string{"api-core", "api-report", "worker-mailer", "worker-sync", "job-backfill"} {
+			want[s+"/"+svc] = "OK"
 		}
+	}
+	maps.Copy(want, map[string]string{
+		"jakarta/api-core-partner": "OK",
+		"surabaya/api-core":        "BEHIND", "surabaya/api-core-partner": "BEHIND", "surabaya/api-report": "BEHIND",
+		"surabaya/worker-mailer": "BEHIND", "surabaya/worker-sync": "BEHIND", "surabaya/job-backfill": "BEHIND",
+		"medan/api-core": "SCHEMA_PENDING", "medan/api-report": "SCHEMA_PENDING", "medan/job-backfill": "NEVER",
+		"bandung/api-core": "DB_AHEAD", "bandung/api-report": "DB_AHEAD", "bandung/worker-sync": "BEHIND",
+		"makassar/api-core": "DOWN", "makassar/api-report": "DOWN", "makassar/worker-mailer": "BEHIND",
+		"makassar/worker-sync": "BEHIND", "makassar/job-backfill": "NEVER",
+	})
+	got := cells()
+	if len(got) != len(want) {
+		t.Errorf("%d cells, want %d", len(got), len(want))
+	}
+	for k, w := range want {
+		if got[k].State != w {
+			t.Errorf("%s: state %s, want %s (%s)", k, got[k].State, w, got[k].Error)
+		}
+	}
+	if c := got["surabaya/worker-sync"]; c.Behind != 2 || c.Source != "gitlab" || c.DeployedAt == nil {
+		t.Errorf("surabaya/worker-sync = %+v, want 2 behind from a gitlab deployment", c)
+	}
+	if c := got["medan/api-core"]; c.Source != "version" || c.Schema == nil || !slices.Equal(c.Schema.Pending, []string{"M20260913120000_job_runs"}) {
+		t.Errorf("medan/api-core = %+v", c)
 	}
 
 	// 2. an unchanged fleet records nothing new
@@ -181,22 +274,38 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	// 3. deploy guards
-	if code := call("POST", "/api/deploys", "text/plain", map[string]any{"sites": []string{"medan"}, "sha": snap.Head}, nil); code != http.StatusUnsupportedMediaType {
+	target := func(site, svc, postfix string) map[string]string {
+		return map[string]string{"site": site, "service": svc, "postfix": postfix}
+	}
+	deployBody := func(sha string, ts ...map[string]string) map[string]any {
+		return map[string]any{"targets": ts, "sha": sha}
+	}
+	if code := call("POST", "/api/deploys", "text/plain", deployBody(snap.Head, target("medan", "api-core", "")), nil); code != http.StatusUnsupportedMediaType {
 		t.Errorf("non-JSON post: %d, want 415", code)
 	}
-	if code := call("POST", "/api/deploys", "application/json", map[string]any{"sites": []string{"medan"}, "sha": "stale"}, nil); code != http.StatusConflict {
+	if code := call("POST", "/api/deploys", "application/json", deployBody("stale", target("medan", "api-core", "")), nil); code != http.StatusConflict {
 		t.Errorf("stale sha: %d, want 409", code)
 	}
+	if code := call("POST", "/api/deploys", "application/json", deployBody(snap.Head, target("medan", "api-core", "-partner")), nil); code != http.StatusBadRequest {
+		t.Errorf("variant on a site it doesn't run on: %d, want 400", code)
+	}
 
-	// 4. mass deploy; makassar is down so its pipeline fails
-	targets := []string{"surabaya", "medan", "bandung", "makassar"}
-	if code := call("POST", "/api/deploys", "application/json", map[string]any{"sites": targets, "sha": snap.Head}, nil); code != http.StatusCreated {
+	// 4. mass deploy across sites and kinds; makassar's DB is down so its API
+	// deploy fails, while its worker deploys fine
+	targets := []map[string]string{
+		target("surabaya", "api-core", ""), target("surabaya", "api-core", "-partner"), target("surabaya", "api-report", ""),
+		target("surabaya", "worker-mailer", ""), target("surabaya", "worker-sync", ""),
+		target("medan", "api-core", ""), target("medan", "api-report", ""), target("medan", "job-backfill", ""),
+		target("bandung", "api-core", ""), target("bandung", "api-report", ""), target("bandung", "worker-sync", ""),
+		target("makassar", "api-core", ""), target("makassar", "worker-sync", ""),
+	}
+	if code := call("POST", "/api/deploys", "application/json", deployBody(snap.Head, targets...), nil); code != http.StatusCreated {
 		t.Fatalf("deploy: %d", code)
 	}
 	var deploys []Deploy
 	waitDeploys := func(n int) {
 		t.Helper()
-		for deadline := time.Now().Add(3 * time.Second); ; {
+		for deadline := time.Now().Add(5 * time.Second); ; {
 			call("GET", "/api/deploys", "", nil, &deploys)
 			if len(deploys) == n && !slices.ContainsFunc(deploys, func(d Deploy) bool {
 				return slices.ContainsFunc(d.Runs, func(r Run) bool { return slices.Contains(activeStatuses, r.Status) })
@@ -210,42 +319,71 @@ func TestEndToEnd(t *testing.T) {
 		}
 	}
 	waitDeploys(1)
-	got := map[string]string{}
+	runs := map[string]Run{}
 	for _, r := range deploys[0].Runs {
-		got[r.Site] = r.Status
+		runs[r.Site+"/"+r.Service+r.Postfix] = r
 	}
-	if len(got) != 4 || got["surabaya"] != "success" || got["medan"] != "success" || got["bandung"] != "success" || got["makassar"] != "failed" {
-		t.Errorf("run statuses = %v", got)
-	}
-	if deploys[0].By != "admin" || deploys[0].SHA != snap.Head || m.TriggeredBy(deploys[0].Runs[0].PipelineID) != "deploy-bot" {
-		t.Errorf("deploy by=%s sha=%s", deploys[0].By, deploys[0].SHA)
-	}
-
-	// 5. the fleet converged, and the tracker kept medan's history
-	call("GET", "/api/status", "", nil, &snap)
-	for _, s := range snap.Sites {
-		if w := map[bool]string{true: "DOWN", false: "OK"}[s.Name == "makassar"]; s.State != w {
-			t.Errorf("after deploy %s: %s, want %s", s.Name, s.State, w)
+	for _, tg := range targets {
+		k := tg["site"] + "/" + tg["service"] + tg["postfix"]
+		w := map[bool]string{true: "failed", false: "success"}[k == "makassar/api-core"]
+		if runs[k].Status != w || runs[k].ID == 0 || runs[k].PipelineSHA != snap.Head {
+			t.Errorf("run %s = %+v, want %s at the head", k, runs[k], w)
 		}
 	}
-	var hist []SiteVersion
-	call("GET", "/api/sites/medan/versions", "", nil, &hist)
-	if len(hist) != 2 || hist[0].State != "OK" || hist[1].State != "SCHEMA_PENDING" ||
-		!slices.Equal(hist[1].Pending, []string{"M20260913120000_job_runs"}) || len(hist[0].Pending) != 0 {
-		t.Errorf("medan history = %+v", hist)
+	if len(runs) != len(targets) || deploys[0].By != "admin" || deploys[0].SHA != snap.Head {
+		t.Errorf("deploy = %+v", deploys[0])
+	}
+	partner := runs["surabaya/api-core-partner"].PipelineID
+	if in := m.Inputs(partner); !maps.Equal(in, map[string]string{"SITE": "surabaya", "SERVICE": "api-core", "POSTFIX": "-partner"}) {
+		t.Errorf("pipeline inputs = %v", in)
+	}
+	if m.TriggeredBy(partner) != "deploy-bot" {
+		t.Errorf("password admin's deploy should run as the bot token, ran as %q", m.TriggeredBy(partner))
 	}
 
-	// 6. dropping a site applies at once; the password change applies to the
-	// next sign-in; omitting version_token keeps the stored one
+	// 5. the deployed cells converged, and the tracker kept their history
+	call("GET", "/api/status", "", nil, &snap)
+	got = cells()
+	for _, tg := range targets {
+		k := tg["site"] + "/" + tg["service"] + tg["postfix"]
+		if w := map[bool]string{true: "DOWN", false: "OK"}[k == "makassar/api-core"]; got[k].State != w {
+			t.Errorf("after deploy %s: %s, want %s", k, got[k].State, w)
+		}
+	}
+	if got["makassar/worker-mailer"].State != "BEHIND" {
+		t.Errorf("an untouched cell changed: %+v", got["makassar/worker-mailer"])
+	}
+	history := func(site, svc, postfix string) []SiteVersion {
+		var h []SiteVersion
+		call("GET", "/api/versions?site="+site+"&service="+svc+"&postfix="+postfix, "", nil, &h)
+		return h
+	}
+	if h := history("medan", "api-core", ""); len(h) != 2 || h[0].State != "OK" || h[1].State != "SCHEMA_PENDING" ||
+		!slices.Equal(h[1].Pending, []string{"M20260913120000_job_runs"}) || len(h[0].Pending) != 0 {
+		t.Errorf("medan api-core history = %+v", h)
+	}
+	if h := history("medan", "job-backfill", ""); len(h) != 2 || h[0].State != "OK" || h[0].Source != "gitlab" || h[1].State != "NEVER" {
+		t.Errorf("medan job-backfill history = %+v", h)
+	}
+
+	// 6. a site can't be dropped while a service still names it; drop both and
+	// it applies at once. The password change applies to the next sign-in and
+	// omitting version_token keeps the stored one.
 	delete(settings, "version_token")
-	settings["sites"], settings["password"] = sites[1:], "new-password"
+	without := slices.DeleteFunc(slices.Clone(sites), func(s map[string]string) bool { return s["name"] == "jakarta" })
+	settings["sites"] = without // api-core-partner still lists jakarta
+	if code := call("PUT", "/api/settings", "application/json", settings, nil); code != http.StatusBadRequest {
+		t.Errorf("dropping a site a service names: %d, want 400", code)
+	}
+	services[1]["sites"] = []string{"surabaya"}
+	settings["services"], settings["password"] = services, "new-password"
 	if code := call("PUT", "/api/settings", "application/json", settings, nil); code != 200 {
 		t.Fatalf("second save: %d", code)
 	}
 	delete(settings, "password")
 	call("GET", "/api/status", "", nil, &snap)
-	if len(snap.Sites) != 4 || slices.ContainsFunc(snap.Sites, func(s SiteStatus) bool { return s.Name == "jakarta" }) {
-		t.Errorf("after removing jakarta: %+v", snap.Sites)
+	if len(snap.Sites) != 4 || slices.Contains(snap.Sites, "jakarta") || len(snap.Cells) != 4*5+1 {
+		t.Errorf("after dropping jakarta: %d sites, %d cells", len(snap.Sites), len(snap.Cells))
 	}
 	if code := do(browser(), "POST", api.URL+"/auth/password", "application/json", map[string]string{"user": "admin", "password": "pw-12345"}, nil).StatusCode; code != http.StatusUnauthorized {
 		t.Errorf("old password still works: %d", code)
@@ -289,26 +427,24 @@ func TestEndToEnd(t *testing.T) {
 	if landed != "/" {
 		t.Fatalf("budi landed on %q", landed)
 	}
+	as = budi
 	var me struct {
 		User         User `json:"user"`
 		CanConfigure bool `json:"can_configure"`
 	}
 	for range 2 { // each call refreshes the (rotating) token; both must work
-		if code := do(budi, "GET", api.URL+"/api/me", "", nil, &me).StatusCode; code != 200 || me.User.Username != "budi" || me.User.AccessLevel != 30 || me.CanConfigure {
+		if code := call("GET", "/api/me", "", nil, &me); code != 200 || me.User.Username != "budi" || me.User.AccessLevel != 30 || me.CanConfigure {
 			t.Fatalf("budi /api/me: %d %+v", code, me)
 		}
 	}
-	if code := do(budi, "GET", api.URL+"/api/settings", "", nil, nil).StatusCode; code != http.StatusForbidden {
+	if code := call("GET", "/api/settings", "", nil, nil); code != http.StatusForbidden {
 		t.Errorf("developer reading settings: %d, want 403", code)
 	}
-	if code := do(budi, "POST", api.URL+"/api/deploys", "application/json", map[string]any{"sites": []string{"medan"}, "sha": snap.Head}, nil).StatusCode; code != http.StatusCreated {
+	if code := call("POST", "/api/deploys", "application/json", deployBody(snap.Head, target("makassar", "worker-mailer", "")), nil); code != http.StatusCreated {
 		t.Fatalf("budi deploy: %d", code)
 	}
 	tamu, _ := signIn("tamu")
-	do(tamu, "POST", api.URL+"/api/deploys", "application/json", map[string]any{"sites": []string{"medan"}, "sha": snap.Head}, nil)
-	call = func(method, path, contentType string, body, out any) int {
-		return do(budi, method, api.URL+path, contentType, body, out).StatusCode
-	}
+	do(tamu, "POST", api.URL+"/api/deploys", "application/json", deployBody(snap.Head, target("medan", "worker-sync", "")), nil)
 	waitDeploys(3)
 	if d := deploys[1]; d.By != "budi" || d.Runs[0].Status != "success" || m.TriggeredBy(d.Runs[0].PipelineID) != "budi" {
 		t.Errorf("budi's deploy = %+v, triggered by %q", d, m.TriggeredBy(d.Runs[0].PipelineID))

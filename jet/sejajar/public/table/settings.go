@@ -17,18 +17,22 @@ type settingsTable struct {
 	postgres.Table
 
 	// Columns
-	ID                postgres.ColumnBool
-	GitlabURL         postgres.ColumnString
-	GitlabProject     postgres.ColumnString
-	GitlabBranch      postgres.ColumnString
-	VersionToken      postgres.ColumnString
-	PollSeconds       postgres.ColumnInteger
-	AdminUser         postgres.ColumnString
-	AdminPasswordHash postgres.ColumnString
-	UpdatedAt         postgres.ColumnTimestampz
-	UpdatedBy         postgres.ColumnString
-	OAuthClientID     postgres.ColumnString
-	OAuthClientSecret postgres.ColumnString
+	ID                     postgres.ColumnBool
+	GitlabURL              postgres.ColumnString
+	GitlabProject          postgres.ColumnString
+	GitlabBranch           postgres.ColumnString
+	EnvironmentTemplate    postgres.ColumnString
+	APIEnvironmentTemplate postgres.ColumnString
+	PipelineInputs         postgres.ColumnString
+	TriggerAs              postgres.ColumnString
+	VersionToken           postgres.ColumnString
+	PollSeconds            postgres.ColumnInteger
+	AdminUser              postgres.ColumnString
+	AdminPasswordHash      postgres.ColumnString
+	OAuthClientID          postgres.ColumnString
+	OAuthClientSecret      postgres.ColumnString
+	UpdatedAt              postgres.ColumnTimestampz
+	UpdatedBy              postgres.ColumnString
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
@@ -70,39 +74,47 @@ func newSettingsTable(schemaName, tableName, alias string) *SettingsTable {
 
 func newSettingsTableImpl(schemaName, tableName, alias string) settingsTable {
 	var (
-		IDColumn                = postgres.BoolColumn("id")
-		GitlabURLColumn         = postgres.StringColumn("gitlab_url")
-		GitlabProjectColumn     = postgres.StringColumn("gitlab_project")
-		GitlabBranchColumn      = postgres.StringColumn("gitlab_branch")
-		VersionTokenColumn      = postgres.StringColumn("version_token")
-		PollSecondsColumn       = postgres.IntegerColumn("poll_seconds")
-		AdminUserColumn         = postgres.StringColumn("admin_user")
-		AdminPasswordHashColumn = postgres.StringColumn("admin_password_hash")
-		UpdatedAtColumn         = postgres.TimestampzColumn("updated_at")
-		UpdatedByColumn         = postgres.StringColumn("updated_by")
-		OAuthClientIDColumn     = postgres.StringColumn("oauth_client_id")
-		OAuthClientSecretColumn = postgres.StringColumn("oauth_client_secret")
-		allColumns              = postgres.ColumnList{IDColumn, GitlabURLColumn, GitlabProjectColumn, GitlabBranchColumn, VersionTokenColumn, PollSecondsColumn, AdminUserColumn, AdminPasswordHashColumn, UpdatedAtColumn, UpdatedByColumn, OAuthClientIDColumn, OAuthClientSecretColumn}
-		mutableColumns          = postgres.ColumnList{GitlabURLColumn, GitlabProjectColumn, GitlabBranchColumn, VersionTokenColumn, PollSecondsColumn, AdminUserColumn, AdminPasswordHashColumn, UpdatedAtColumn, UpdatedByColumn, OAuthClientIDColumn, OAuthClientSecretColumn}
-		defaultColumns          = postgres.ColumnList{IDColumn, GitlabURLColumn, GitlabProjectColumn, GitlabBranchColumn, VersionTokenColumn, PollSecondsColumn, AdminUserColumn, AdminPasswordHashColumn, UpdatedAtColumn, UpdatedByColumn, OAuthClientIDColumn, OAuthClientSecretColumn}
+		IDColumn                     = postgres.BoolColumn("id")
+		GitlabURLColumn              = postgres.StringColumn("gitlab_url")
+		GitlabProjectColumn          = postgres.StringColumn("gitlab_project")
+		GitlabBranchColumn           = postgres.StringColumn("gitlab_branch")
+		EnvironmentTemplateColumn    = postgres.StringColumn("environment_template")
+		APIEnvironmentTemplateColumn = postgres.StringColumn("api_environment_template")
+		PipelineInputsColumn         = postgres.StringColumn("pipeline_inputs")
+		TriggerAsColumn              = postgres.StringColumn("trigger_as")
+		VersionTokenColumn           = postgres.StringColumn("version_token")
+		PollSecondsColumn            = postgres.IntegerColumn("poll_seconds")
+		AdminUserColumn              = postgres.StringColumn("admin_user")
+		AdminPasswordHashColumn      = postgres.StringColumn("admin_password_hash")
+		OAuthClientIDColumn          = postgres.StringColumn("oauth_client_id")
+		OAuthClientSecretColumn      = postgres.StringColumn("oauth_client_secret")
+		UpdatedAtColumn              = postgres.TimestampzColumn("updated_at")
+		UpdatedByColumn              = postgres.StringColumn("updated_by")
+		allColumns                   = postgres.ColumnList{IDColumn, GitlabURLColumn, GitlabProjectColumn, GitlabBranchColumn, EnvironmentTemplateColumn, APIEnvironmentTemplateColumn, PipelineInputsColumn, TriggerAsColumn, VersionTokenColumn, PollSecondsColumn, AdminUserColumn, AdminPasswordHashColumn, OAuthClientIDColumn, OAuthClientSecretColumn, UpdatedAtColumn, UpdatedByColumn}
+		mutableColumns               = postgres.ColumnList{GitlabURLColumn, GitlabProjectColumn, GitlabBranchColumn, EnvironmentTemplateColumn, APIEnvironmentTemplateColumn, PipelineInputsColumn, TriggerAsColumn, VersionTokenColumn, PollSecondsColumn, AdminUserColumn, AdminPasswordHashColumn, OAuthClientIDColumn, OAuthClientSecretColumn, UpdatedAtColumn, UpdatedByColumn}
+		defaultColumns               = postgres.ColumnList{IDColumn, GitlabURLColumn, GitlabProjectColumn, GitlabBranchColumn, EnvironmentTemplateColumn, APIEnvironmentTemplateColumn, PipelineInputsColumn, TriggerAsColumn, VersionTokenColumn, PollSecondsColumn, AdminUserColumn, AdminPasswordHashColumn, OAuthClientIDColumn, OAuthClientSecretColumn, UpdatedAtColumn, UpdatedByColumn}
 	)
 
 	return settingsTable{
 		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
 
 		//Columns
-		ID:                IDColumn,
-		GitlabURL:         GitlabURLColumn,
-		GitlabProject:     GitlabProjectColumn,
-		GitlabBranch:      GitlabBranchColumn,
-		VersionToken:      VersionTokenColumn,
-		PollSeconds:       PollSecondsColumn,
-		AdminUser:         AdminUserColumn,
-		AdminPasswordHash: AdminPasswordHashColumn,
-		UpdatedAt:         UpdatedAtColumn,
-		UpdatedBy:         UpdatedByColumn,
-		OAuthClientID:     OAuthClientIDColumn,
-		OAuthClientSecret: OAuthClientSecretColumn,
+		ID:                     IDColumn,
+		GitlabURL:              GitlabURLColumn,
+		GitlabProject:          GitlabProjectColumn,
+		GitlabBranch:           GitlabBranchColumn,
+		EnvironmentTemplate:    EnvironmentTemplateColumn,
+		APIEnvironmentTemplate: APIEnvironmentTemplateColumn,
+		PipelineInputs:         PipelineInputsColumn,
+		TriggerAs:              TriggerAsColumn,
+		VersionToken:           VersionTokenColumn,
+		PollSeconds:            PollSecondsColumn,
+		AdminUser:              AdminUserColumn,
+		AdminPasswordHash:      AdminPasswordHashColumn,
+		OAuthClientID:          OAuthClientIDColumn,
+		OAuthClientSecret:      OAuthClientSecretColumn,
+		UpdatedAt:              UpdatedAtColumn,
+		UpdatedBy:              UpdatedByColumn,
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,

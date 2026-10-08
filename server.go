@@ -40,7 +40,7 @@ func newHandler(f *Fleet) http.Handler {
 	mux.Handle("GET /api/status", srv.requireUser(false, srv.status))
 	mux.Handle("GET /api/deploys", srv.requireUser(false, srv.listDeploys))
 	mux.Handle("POST /api/deploys", srv.requireUser(false, srv.createDeploy))
-	mux.Handle("GET /api/sites/{site}/versions", srv.requireUser(false, srv.siteVersions))
+	mux.Handle("GET /api/versions", srv.requireUser(false, srv.cellVersions))
 	mux.Handle("GET /api/settings", srv.requireUser(true, srv.getSettings))
 	mux.Handle("PUT /api/settings", srv.requireUser(true, srv.putSettings))
 	return mux
@@ -100,20 +100,20 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) (int, error) {
 
 func (s *server) createDeploy(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Sites []string `json:"sites"`
-		SHA   string   `json:"sha"`
+		Targets []Target `json:"targets"`
+		SHA     string   `json:"sha"`
 	}
 	if code, err := readJSON(w, r, &req); err != nil {
 		writeErr(w, code, err)
 		return
 	}
-	if len(req.Sites) == 0 || req.SHA == "" {
-		writeErr(w, http.StatusBadRequest, errors.New(`body must be {"sites": [...], "sha": "<head sha>"}`))
+	if len(req.Targets) == 0 || req.SHA == "" {
+		writeErr(w, http.StatusBadRequest, errors.New(`body must be {"targets": [{"site", "service", "postfix"}, ...], "sha": "<head sha>"}`))
 		return
 	}
 	u := userFrom(r.Context())
 	by := u.Username
-	d, err := s.fleet.Deploy(r.Context(), by, req.Sites, req.SHA, u.token)
+	d, err := s.fleet.Deploy(r.Context(), by, req.Targets, req.SHA, u.token)
 	if errors.Is(err, ErrStale) {
 		writeErr(w, http.StatusConflict, err)
 		return
@@ -132,8 +132,10 @@ func (s *server) createDeploy(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"deploy": d})
 }
 
-func (s *server) siteVersions(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.store.ListSiteVersions(r.Context(), r.PathValue("site"), 100)
+// cellVersions is one (site, service) cell's history: ?site=&service=&postfix=
+func (s *server) cellVersions(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	rows, err := s.store.ListSiteVersions(r.Context(), q.Get("site"), q.Get("service"), q.Get("postfix"), 100)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return

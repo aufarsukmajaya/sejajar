@@ -14,8 +14,11 @@ import (
 type SiteVersions struct {
 	ID         int64 `sql:"primary_key"`
 	Site       string
+	Service    string
+	Postfix    string
 	ObservedAt time.Time
 	State      string
+	Source     string
 	CommitSha  string
 	SchemaCode string
 	SchemaDb   string

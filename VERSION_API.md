@@ -1,6 +1,9 @@
 # Version API spec
 
-Every deployed app exposes this endpoint. `sejajar status` polls it on each site.
+Every API service exposes this endpoint; sejajar polls it on each site, at the
+site's version URL template (`{site}`, `{service}`, `{postfix}` filled in).
+Workers and jobs don't need it: sejajar reads their last successful GitLab
+deployment instead.
 
 ## Request
 
@@ -43,7 +46,7 @@ differs only by case.
 - The endpoint must answer even while migrations are pending. Do not gate it
   behind the readiness probe.
 - If the DB can't be reached, return `503` with `{"commit": "...", "error": "db unreachable"}`.
-  The tool shows the site as DOWN.
+  Sejajar shows the cell as DOWN.
 - Run one indexed `SELECT` per call. A short cache (≤ 30s) is fine.
 
 ## Security

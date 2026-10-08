@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type gitlab struct{ base, token string }
@@ -19,6 +20,7 @@ func newGitlab(c *Config, token string) gitlab {
 
 type pipeline struct {
 	ID     int64  `json:"id"`
+	SHA    string `json:"sha"`
 	Status string `json:"status"`
 	WebURL string `json:"web_url"`
 }
@@ -59,21 +61,46 @@ func (g gitlab) commitsBetween(from, to string) (int, error) {
 	return len(c.Commits), err
 }
 
-func (g gitlab) triggerPipeline(ref string, vars map[string]string) (pipeline, error) {
-	type kv struct {
-		Key   string `json:"key"`
-		Value string `json:"value"`
-	}
-	body := struct {
-		Ref       string `json:"ref"`
-		Variables []kv   `json:"variables"`
-	}{Ref: ref}
-	for k, v := range vars {
-		body.Variables = append(body.Variables, kv{k, v})
+// triggerPipeline creates a pipeline on ref, passing vals as spec:inputs
+// (as = "inputs") or as CI variables.
+func (g gitlab) triggerPipeline(ref string, vals map[string]string, as string) (pipeline, error) {
+	body := map[string]any{"ref": ref}
+	if as == "variables" {
+		type kv struct {
+			Key   string `json:"key"`
+			Value string `json:"value"`
+		}
+		vars := []kv{}
+		for k, v := range vals {
+			vars = append(vars, kv{k, v})
+		}
+		body["variables"] = vars
+	} else {
+		body["inputs"] = vals
 	}
 	var p pipeline
 	err := g.do(http.MethodPost, "/pipeline", body, &p)
 	return p, err
+}
+
+type deployment struct {
+	SHA        string    `json:"sha"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	Deployable struct {
+		Pipeline struct {
+			WebURL string `json:"web_url"`
+		} `json:"pipeline"`
+	} `json:"deployable"`
+}
+
+// lastDeployment is the environment's latest successful deployment, nil if none.
+func (g gitlab) lastDeployment(env string) (*deployment, error) {
+	q := url.Values{"environment": {env}, "status": {"success"}, "order_by": {"id"}, "sort": {"desc"}, "per_page": {"1"}}
+	var ds []deployment
+	if err := g.do(http.MethodGet, "/deployments?"+q.Encode(), nil, &ds); err != nil || len(ds) == 0 {
+		return nil, err
+	}
+	return &ds[0], nil
 }
 
 func (g gitlab) pipeline(id int64) (pipeline, error) {

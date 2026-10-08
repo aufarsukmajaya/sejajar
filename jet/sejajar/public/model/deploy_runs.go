@@ -12,12 +12,15 @@ import (
 )
 
 type DeployRuns struct {
-	ID         int64 `sql:"primary_key"`
-	DeployID   int64
-	Site       string
-	PipelineID *int64
-	WebURL     string
-	Status     string
-	Error      string
-	UpdatedAt  time.Time
+	ID          int64 `sql:"primary_key"`
+	DeployID    int64
+	Site        string
+	Service     string
+	Postfix     string
+	PipelineID  *int64
+	PipelineSha string
+	WebURL      string
+	Status      string
+	Error       string
+	UpdatedAt   time.Time
 }

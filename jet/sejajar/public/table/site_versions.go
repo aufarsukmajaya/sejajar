@@ -19,8 +19,11 @@ type siteVersionsTable struct {
 	// Columns
 	ID         postgres.ColumnInteger
 	Site       postgres.ColumnString
+	Service    postgres.ColumnString
+	Postfix    postgres.ColumnString
 	ObservedAt postgres.ColumnTimestampz
 	State      postgres.ColumnString
+	Source     postgres.ColumnString
 	CommitSha  postgres.ColumnString
 	SchemaCode postgres.ColumnString
 	SchemaDb   postgres.ColumnString
@@ -70,17 +73,20 @@ func newSiteVersionsTableImpl(schemaName, tableName, alias string) siteVersionsT
 	var (
 		IDColumn         = postgres.IntegerColumn("id")
 		SiteColumn       = postgres.StringColumn("site")
+		ServiceColumn    = postgres.StringColumn("service")
+		PostfixColumn    = postgres.StringColumn("postfix")
 		ObservedAtColumn = postgres.TimestampzColumn("observed_at")
 		StateColumn      = postgres.StringColumn("state")
+		SourceColumn     = postgres.StringColumn("source")
 		CommitShaColumn  = postgres.StringColumn("commit_sha")
 		SchemaCodeColumn = postgres.StringColumn("schema_code")
 		SchemaDbColumn   = postgres.StringColumn("schema_db")
 		PendingColumn    = postgres.StringColumn("pending")
 		UnknownColumn    = postgres.StringColumn("unknown")
 		ErrorColumn      = postgres.StringColumn("error")
-		allColumns       = postgres.ColumnList{IDColumn, SiteColumn, ObservedAtColumn, StateColumn, CommitShaColumn, SchemaCodeColumn, SchemaDbColumn, PendingColumn, UnknownColumn, ErrorColumn}
-		mutableColumns   = postgres.ColumnList{SiteColumn, ObservedAtColumn, StateColumn, CommitShaColumn, SchemaCodeColumn, SchemaDbColumn, PendingColumn, UnknownColumn, ErrorColumn}
-		defaultColumns   = postgres.ColumnList{IDColumn, ObservedAtColumn, CommitShaColumn, SchemaCodeColumn, SchemaDbColumn, PendingColumn, UnknownColumn, ErrorColumn}
+		allColumns       = postgres.ColumnList{IDColumn, SiteColumn, ServiceColumn, PostfixColumn, ObservedAtColumn, StateColumn, SourceColumn, CommitShaColumn, SchemaCodeColumn, SchemaDbColumn, PendingColumn, UnknownColumn, ErrorColumn}
+		mutableColumns   = postgres.ColumnList{SiteColumn, ServiceColumn, PostfixColumn, ObservedAtColumn, StateColumn, SourceColumn, CommitShaColumn, SchemaCodeColumn, SchemaDbColumn, PendingColumn, UnknownColumn, ErrorColumn}
+		defaultColumns   = postgres.ColumnList{IDColumn, PostfixColumn, ObservedAtColumn, SourceColumn, CommitShaColumn, SchemaCodeColumn, SchemaDbColumn, PendingColumn, UnknownColumn, ErrorColumn}
 	)
 
 	return siteVersionsTable{
@@ -89,8 +95,11 @@ func newSiteVersionsTableImpl(schemaName, tableName, alias string) siteVersionsT
 		//Columns
 		ID:         IDColumn,
 		Site:       SiteColumn,
+		Service:    ServiceColumn,
+		Postfix:    PostfixColumn,
 		ObservedAt: ObservedAtColumn,
 		State:      StateColumn,
+		Source:     SourceColumn,
 		CommitSha:  CommitShaColumn,
 		SchemaCode: SchemaCodeColumn,
 		SchemaDb:   SchemaDbColumn,

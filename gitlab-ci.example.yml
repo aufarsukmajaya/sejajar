@@ -2,13 +2,17 @@
 # Sejajar creates one pipeline per (site, service) cell on the branch, with
 # the inputs set in Settings, e.g.:
 #
-#   SITE={site}  SERVICE={service}  POSTFIX={postfix}
+#   SITE={site}  SERVICE={service}  POSTFIX={postfix}  DEPLOY_SHA={sha}
+#
+# A pipeline always runs the branch head; DEPLOY_SHA pins the image to the
+# commit the operator confirmed, so a long fan-out stays on one commit even if
+# main moves meanwhile.
 #
 # The deploy job must record a GitLab environment named like Settings'
 # environment template ("{site}-{service}{postfix}" here). That is how sejajar
 # knows what each worker and job runs, since they expose no /version.
 #
-# Assumes: the build stage pushes $CI_REGISTRY_IMAGE/$SERVICE:$CI_COMMIT_SHA;
+# Assumes: the build stage pushes $CI_REGISTRY_IMAGE/$SERVICE:<sha> for main's commits;
 # a GitLab agent per site named like the site; and, for APIs, a suspended
 # CronJob "<service>-migrate" as the migration Job template.
 
@@ -20,11 +24,14 @@ spec:
       default: ""
     POSTFIX:
       default: ""
+    DEPLOY_SHA:
+      default: ""
 ---
 variables:
   SITE: $[[ inputs.SITE ]]
   SERVICE: $[[ inputs.SERVICE ]]
   POSTFIX: $[[ inputs.POSTFIX ]]
+  DEPLOY_SHA: $[[ inputs.DEPLOY_SHA ]]
 
 deploy:
   stage: deploy
@@ -37,8 +44,8 @@ deploy:
   variables:
     NS: app
     NAME: $SERVICE$POSTFIX                  # a postfix is its own deployment
-    IMG: $CI_REGISTRY_IMAGE/$SERVICE:$CI_COMMIT_SHA
   script:
+    - IMG="$CI_REGISTRY_IMAGE/$SERVICE:${DEPLOY_SHA:-$CI_COMMIT_SHA}"
     - kubectl config use-context "$CI_PROJECT_PATH:$SITE"
     # APIs migrate first (the old code keeps running against the additive schema)
     - |

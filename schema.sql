@@ -44,7 +44,6 @@ CREATE TABLE IF NOT EXISTS site_versions (
     unknown     jsonb       NOT NULL DEFAULT '[]',
     error       text        NOT NULL DEFAULT ''
 );
-CREATE INDEX IF NOT EXISTS site_versions_cell_observed_idx ON site_versions (site, service, postfix, observed_at DESC);
 
 -- Runtime configuration, edited from the dashboard. Exactly one row.
 -- Only DATABASE_URL and GITLAB_TOKEN come from the environment.
@@ -58,7 +57,7 @@ CREATE TABLE IF NOT EXISTS settings (
     environment_template     text        NOT NULL DEFAULT '{site}-{service}{postfix}',
     api_environment_template text        NOT NULL DEFAULT '',
     -- What a deploy pipeline is given, as spec:inputs or as CI variables.
-    pipeline_inputs          jsonb       NOT NULL DEFAULT '{"SITE": "{site}", "SERVICE": "{service}"}',
+    pipeline_inputs          jsonb       NOT NULL DEFAULT '{"SITE": "{site}", "SERVICE": "{service}", "POSTFIX": "{postfix}", "DEPLOY_SHA": "{sha}"}',
     trigger_as               text        NOT NULL DEFAULT 'inputs' CHECK (trigger_as IN ('inputs', 'variables')),
     version_token            text        NOT NULL DEFAULT '',
     poll_seconds             integer     NOT NULL DEFAULT 60 CHECK (poll_seconds >= 10),
@@ -106,3 +105,21 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at       timestamptz NOT NULL
 );
 CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions (expires_at);
+
+-- Upgrades for databases created by earlier versions (CREATE TABLE IF NOT
+-- EXISTS leaves an existing table as it was). Keep every new column here too.
+ALTER TABLE deploy_runs   ADD COLUMN IF NOT EXISTS service                  text  NOT NULL DEFAULT '';
+ALTER TABLE deploy_runs   ADD COLUMN IF NOT EXISTS postfix                  text  NOT NULL DEFAULT '';
+ALTER TABLE deploy_runs   ADD COLUMN IF NOT EXISTS pipeline_sha             text  NOT NULL DEFAULT '';
+ALTER TABLE site_versions ADD COLUMN IF NOT EXISTS service                  text  NOT NULL DEFAULT '';
+ALTER TABLE site_versions ADD COLUMN IF NOT EXISTS postfix                  text  NOT NULL DEFAULT '';
+ALTER TABLE site_versions ADD COLUMN IF NOT EXISTS source                   text  NOT NULL DEFAULT '';
+ALTER TABLE settings      ADD COLUMN IF NOT EXISTS environment_template     text  NOT NULL DEFAULT '{site}-{service}{postfix}';
+ALTER TABLE settings      ADD COLUMN IF NOT EXISTS api_environment_template text  NOT NULL DEFAULT '';
+ALTER TABLE settings      ADD COLUMN IF NOT EXISTS pipeline_inputs          jsonb NOT NULL DEFAULT '{"SITE": "{site}", "SERVICE": "{service}", "POSTFIX": "{postfix}", "DEPLOY_SHA": "{sha}"}';
+ALTER TABLE settings      ADD COLUMN IF NOT EXISTS trigger_as               text  NOT NULL DEFAULT 'inputs' CHECK (trigger_as IN ('inputs', 'variables'));
+ALTER TABLE settings      ADD COLUMN IF NOT EXISTS oauth_client_id          text  NOT NULL DEFAULT '';
+ALTER TABLE settings      ADD COLUMN IF NOT EXISTS oauth_client_secret      text  NOT NULL DEFAULT '';
+ALTER TABLE sites         ALTER COLUMN version_url SET DEFAULT '';
+DROP INDEX IF EXISTS site_versions_site_observed_idx; -- superseded by the per-cell index
+CREATE INDEX IF NOT EXISTS site_versions_cell_observed_idx ON site_versions (site, service, postfix, observed_at DESC);

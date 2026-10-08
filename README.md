@@ -51,10 +51,22 @@ can be limited to the sites that run it.
 
 **Deploying** a cell creates one pipeline on the branch with the configured
 pipeline inputs, for example `SITE={site}`, `SERVICE={service}`,
-`POSTFIX={postfix}`, `DEPLOY_ENV=production`. They are sent as `spec:inputs`
-(GitLab 17.10+) or as CI variables. A pipeline builds the branch, not a SHA.
-Sejajar refuses the deploy if `main` moved since you looked, and flags any
-pipeline that GitLab started on a newer commit.
+`POSTFIX={postfix}`, `DEPLOY_SHA={sha}`, `DEPLOY_ENV=production`. They are sent
+as `spec:inputs` (GitLab 17.10+) or as CI variables. Settings refuses templates
+that can't tell two cells apart (no `{postfix}` while variants exist, or a
+version URL without `{service}`).
+
+A pipeline always runs the branch head. Sejajar refuses the deploy if `main`
+moved since you looked. Passing `{sha}` lets the CI build the confirmed commit
+(see `gitlab-ci.example.yml`), so a large deploy stays on one commit even if
+`main` moves while the pipelines are being created. Without it, Sejajar flags
+any pipeline that GitLab started on a newer commit.
+
+One limit: GitLab records a deployment against the pipeline's own commit (the
+branch head when it started), not `DEPLOY_SHA`. So if `main` moves during a
+deploy, a worker or job pinned to the older commit can read as one commit newer
+than it runs, until the next deploy. APIs are unaffected, because their
+`/version` reports the real build.
 
 **Jobs** are one-off. "Select out of date" and row or site selection skip them;
 select them cell by cell (or name them with `-services`).

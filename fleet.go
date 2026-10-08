@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -63,7 +64,13 @@ func (s Service) runsOn(site string) bool { return len(s.Sites) == 0 || slices.C
 
 var kinds = []string{"api", "worker", "job"}
 
-// expand fills a template's {site}, {service} and {postfix}.
+// defaultInputs is what a deploy pipeline gets when Settings name none.
+func defaultInputs() map[string]string {
+	return map[string]string{"SITE": "{site}", "SERVICE": "{service}", "POSTFIX": "{postfix}", "DEPLOY_SHA": "{sha}"}
+}
+
+// expand fills a template's {site}, {service} and {postfix}. Deploy also
+// fills {sha} in pipeline inputs.
 func expand(tmpl, site string, svc Service) string {
 	return strings.NewReplacer("{site}", site, "{service}", svc.Name, "{postfix}", svc.Postfix).Replace(tmpl)
 }
@@ -116,6 +123,9 @@ func (c *Config) validate() error {
 	if c.TriggerAs != "inputs" && c.TriggerAs != "variables" {
 		return errors.New(`trigger_as must be "inputs" or "variables"`)
 	}
+	if c.PipelineInputs == nil {
+		c.PipelineInputs = defaultInputs()
+	}
 	if len(c.PipelineInputs) > 30 {
 		return errors.New("at most 30 pipeline inputs")
 	}
@@ -165,6 +175,44 @@ func (c *Config) validate() error {
 			if !sites[site] {
 				return fmt.Errorf("service %s: unknown site %q", s.ID(), site)
 			}
+		}
+	}
+	return c.validateTemplates()
+}
+
+// validateTemplates checks that the templates tell cells apart; otherwise two
+// cells would share a pipeline, a GitLab environment or a /version, and one
+// would silently stand in for the other.
+func (c *Config) validateTemplates() error {
+	postfix := func(svcs []Service) bool {
+		return slices.ContainsFunc(svcs, func(s Service) bool { return s.Postfix != "" })
+	}
+	need := []string{"{site}", "{service}"}
+	if postfix(c.Services) {
+		need = append(need, "{postfix}")
+	}
+	values := strings.Join(slices.Collect(maps.Values(c.PipelineInputs)), " ")
+	for _, p := range need {
+		if !strings.Contains(values, p) {
+			return fmt.Errorf("pipeline inputs must pass %s, or deploys can't tell those cells apart", p)
+		}
+		if !strings.Contains(c.EnvironmentTemplate, p) {
+			return fmt.Errorf("environment template must contain %s", p)
+		}
+		if c.APIEnvironmentTemplate != "" && !strings.Contains(c.APIEnvironmentTemplate, p) {
+			return fmt.Errorf("API environment template must contain %s", p)
+		}
+	}
+	for _, site := range c.Sites {
+		if site.VersionURL == "" {
+			continue
+		}
+		apis := slices.DeleteFunc(slices.Clone(c.Services), func(s Service) bool { return s.Kind != "api" || !s.runsOn(site.Name) })
+		if len(apis) > 0 && !strings.Contains(site.VersionURL, "{service}") {
+			return fmt.Errorf("site %s: version url must contain {service}: each API answers its own /version", site.Name)
+		}
+		if postfix(apis) && !strings.Contains(site.VersionURL, "{postfix}") {
+			return fmt.Errorf("site %s: version url must contain {postfix}: a postfixed API is its own deployment", site.Name)
 		}
 	}
 	return nil
@@ -238,7 +286,11 @@ var ErrStale = errors.New("main moved since the status was loaded; refresh and c
 
 // parallel caps concurrent calls to GitLab and the sites; a fleet is
 // sites x services, which runs to hundreds of cells.
-const parallel = 16
+const parallel = 32
+
+// versionTimeout bounds one /version call, so an unreachable site costs
+// seconds, not the client's full timeout, per API.
+const versionTimeout = 5 * time.Second
 
 // eachLimited runs fn(i) for i in [0, n) with at most parallel at once.
 func eachLimited(n int, fn func(i int)) {
@@ -273,33 +325,39 @@ func (c *Config) cells() []target {
 }
 
 func (f *Fleet) Snapshot(ctx context.Context) (*Snapshot, error) {
+	snap, _, err := f.snapshot(ctx)
+	return snap, err
+}
+
+// snapshot also returns the config it was taken with.
+func (f *Fleet) snapshot(ctx context.Context) (*Snapshot, *Config, error) {
 	cfg, gl, err := f.load(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	head, err := gl.branchHead(cfg.GitLab.Branch)
+	head, err := gl.branchHead(ctx, cfg.GitLab.Branch)
 	if err != nil {
-		return nil, fmt.Errorf("read %s head: %w", cfg.GitLab.Branch, err)
+		return nil, nil, fmt.Errorf("read %s head: %w", cfg.GitLab.Branch, err)
 	}
 	refs := cfg.cells()
 	out := make([]Cell, len(refs))
-	behind := &behindCache{gl: gl, head: head, m: map[string]*behindEntry{}}
-	eachLimited(len(refs), func(i int) { out[i] = check(gl, cfg, refs[i], head, behind) })
+	behind := &behindCache{ctx: ctx, gl: gl, head: head, m: map[string]*behindEntry{}}
+	eachLimited(len(refs), func(i int) { out[i] = check(ctx, gl, cfg, refs[i], head, behind) })
 
 	snap := &Snapshot{Branch: cfg.GitLab.Branch, Head: head, CheckedAt: time.Now().UTC(), Services: cfg.Services, Cells: out}
 	for _, s := range cfg.Sites {
 		snap.Sites = append(snap.Sites, s.Name)
 	}
-	return snap, nil
+	return snap, cfg, nil
 }
 
 // check reads what one cell runs: live from an API's /version, otherwise from
 // the GitLab environment's last successful deployment.
-func check(gl gitlab, cfg *Config, t target, head string, behind *behindCache) Cell {
+func check(ctx context.Context, gl gitlab, cfg *Config, t target, head string, behind *behindCache) Cell {
 	c := Cell{Site: t.site.Name, Service: t.svc.Name, Postfix: t.svc.Postfix, Kind: t.svc.Kind, Behind: -1}
 	if t.svc.Kind == "api" && t.site.VersionURL != "" {
 		c.Source = "version"
-		v, err := fetchVersion(expand(t.site.VersionURL, t.site.Name, t.svc), cfg.VersionToken)
+		v, err := fetchVersion(ctx, expand(t.site.VersionURL, t.site.Name, t.svc), cfg.VersionToken)
 		if err != nil {
 			c.State, c.Error = "DOWN", err.Error()
 			return c
@@ -307,7 +365,7 @@ func check(gl gitlab, cfg *Config, t target, head string, behind *behindCache) C
 		c.Commit, c.Schema, c.State = v.Commit, &v.Schema, classify(head, v)
 	} else {
 		c.Source = "gitlab"
-		d, err := gl.lastDeployment(cfg.environment(t.site.Name, t.svc))
+		d, err := gl.lastDeployment(ctx, cfg.environment(t.site.Name, t.svc))
 		if err != nil {
 			c.State, c.Error = "UNKNOWN", err.Error()
 			return c
@@ -341,6 +399,7 @@ func classify(head string, v *Version) string {
 // behindCache asks GitLab once per distinct commit: most cells share a
 // handful of commits.
 type behindCache struct {
+	ctx  context.Context
 	gl   gitlab
 	head string
 	mu   sync.Mutex
@@ -364,7 +423,7 @@ func (b *behindCache) of(sha string) int {
 	}
 	b.mu.Unlock()
 	e.once.Do(func() {
-		if n, err := b.gl.commitsBetween(sha, b.head); err == nil {
+		if n, err := b.gl.commitsBetween(b.ctx, sha, b.head); err == nil {
 			e.n = n
 		}
 	})
@@ -448,30 +507,34 @@ func (f *Fleet) Deploy(ctx context.Context, by string, targets []Target, sha, us
 		trigger = newGitlab(cfg, userToken)
 	}
 	branch := cfg.GitLab.Branch
-	head, err := gl.branchHead(branch)
+	head, err := gl.branchHead(ctx, branch)
 	if err != nil {
 		return nil, fmt.Errorf("read %s head: %w", branch, err)
 	}
 	if sha != head {
 		return nil, ErrStale
 	}
+	// Once the fan-out starts it runs to the end, even if the caller goes
+	// away, so every pipeline that was created gets recorded.
+	ctx = context.WithoutCancel(ctx)
 	d := &Deploy{By: by, Branch: branch, SHA: head, Runs: make([]Run, len(cells))}
 	eachLimited(len(cells), func(i int) {
 		t := cells[i]
 		r := Run{Site: t.site.Name, Service: t.svc.Name, Postfix: t.svc.Postfix}
 		inputs := map[string]string{}
 		for k, v := range cfg.PipelineInputs {
-			inputs[k] = expand(v, t.site.Name, t.svc)
+			inputs[k] = strings.ReplaceAll(expand(v, t.site.Name, t.svc), "{sha}", head)
 		}
-		p, err := trigger.triggerPipeline(branch, inputs, cfg.TriggerAs)
+		p, err := trigger.triggerPipeline(ctx, branch, inputs, cfg.TriggerAs)
 		switch {
 		case err != nil:
 			r.Status, r.Error = "error", err.Error()
 		default:
 			r.PipelineID, r.PipelineSHA, r.WebURL, r.Status = p.ID, p.SHA, p.WebURL, p.Status
-			// A pipeline runs the branch, not a SHA; say so if main moved
-			// between the check above and this trigger.
-			if p.SHA != "" && p.SHA != head {
+			// A pipeline runs the branch. With {sha} in the inputs the CI
+			// can pin the build to head anyway; without it, say so if main
+			// moved between the check above and this trigger.
+			if p.SHA != "" && p.SHA != head && !pinned(cfg.PipelineInputs) {
 				r.Error = "main moved while triggering; this pipeline builds " + short(p.SHA)
 			}
 		}
@@ -480,8 +543,15 @@ func (f *Fleet) Deploy(ctx context.Context, by string, targets []Target, sha, us
 	return d, nil
 }
 
-func fetchVersion(u, token string) (*Version, error) {
-	req, err := http.NewRequest(http.MethodGet, u, nil)
+// pinned reports whether deploy pipelines are told which commit to build.
+func pinned(inputs map[string]string) bool {
+	return slices.ContainsFunc(slices.Collect(maps.Values(inputs)), func(v string) bool { return strings.Contains(v, "{sha}") })
+}
+
+func fetchVersion(ctx context.Context, u, token string) (*Version, error) {
+	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -559,7 +629,7 @@ func (f *Fleet) SyncRuns(ctx context.Context) error {
 	}
 	errs := make([]error, len(runs))
 	eachLimited(len(runs), func(i int) {
-		p, err := gl.pipeline(*runs[i].PipelineID)
+		p, err := gl.pipeline(ctx, *runs[i].PipelineID)
 		if err != nil || p.Status == runs[i].Status {
 			return // GitLab unreachable: keep the last known status, retry next sync
 		}

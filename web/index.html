@@ -391,13 +391,13 @@ legend { font-family: var(--serif); font-size: 19px; padding: 0 8px; color: var(
       </fieldset>
       <fieldset>
         <legend>Deploy pipeline</legend>
-        <p class="hint">Each selected cell triggers one pipeline on the branch, given these values. Workers and jobs expose no API, so their commit comes from the GitLab environment their deploy job records.</p>
+        <p class="hint">Each selected cell triggers one pipeline on the branch, given these values. Pass <code>{sha}</code> so the CI builds the confirmed commit even if main moves during a large deploy. Workers and jobs expose no API, so their commit comes from the GitLab environment their deploy job records.</p>
         <div class="grid2">
           <label>Pass as <select name="trigger_as"><option value="inputs">spec:inputs</option><option value="variables">CI variables</option></select></label>
           <label>Environment <input type="text" name="env" placeholder="{site}-{service}{postfix}"></label>
           <label>API environment (blank = same) <input type="text" name="api_env" placeholder="{site}-{service}{postfix}-stable"></label>
         </div>
-        <label>Pipeline inputs, one <code>KEY=value</code> per line <textarea name="inputs" spellcheck="false" placeholder="SITE={site}&#10;SERVICE={service}&#10;POSTFIX={postfix}"></textarea></label>
+        <label>Pipeline inputs, one <code>KEY=value</code> per line <textarea name="inputs" spellcheck="false" placeholder="SITE={site}&#10;SERVICE={service}&#10;POSTFIX={postfix}&#10;DEPLOY_SHA={sha}"></textarea></label>
       </fieldset>
       <fieldset>
         <legend>Sites</legend>
@@ -623,7 +623,7 @@ function showApp(res) {
   loadStatus();
   loadDeploys();
   clearInterval(statusTimer);
-  statusTimer = setInterval(loadStatus, 30000);
+  statusTimer = setInterval(() => loadStatus(), 30000);
 }
 
 function skeleton() {
@@ -636,11 +636,13 @@ function skeleton() {
 }
 
 // ---------- status: the matrix ----------
-async function loadStatus() {
+// fresh skips the server's shared snapshot (up to 10s old): for Refresh and
+// right after deploys finish.
+async function loadStatus(fresh) {
   if (!me) return;
   $("refresh").disabled = true;
   try {
-    snap = await api("/api/status");
+    snap = await api("/api/status" + (fresh ? "?fresh" : ""));
     const keys = new Set(snap.cells.map(cellKey));
     for (const k of [...selected]) if (!keys.has(k)) selected.delete(k);
     render();
@@ -763,7 +765,7 @@ function syncSelection() {
 $("filter").oninput = () => snap && render();
 $("select-stale").onclick = () => { snap?.cells.forEach((c) => stale(c) && selected.add(cellKey(c))); if (snap) render(); };
 $("select-none").onclick = () => { selected.clear(); if (snap) render(); };
-$("refresh").onclick = () => { loadStatus(); loadDeploys(); };
+$("refresh").onclick = () => { loadStatus(true); loadDeploys(); };
 
 // ---------- deploy ----------
 $("deploy").onclick = () => {
@@ -805,7 +807,7 @@ $("confirm").addEventListener("close", async () => {
   } catch (e) {
     if (e.status === 401) return;
     toast(e.status === 409 ? "Main moved since you looked. Refreshed; review and confirm again." : "Deploy failed: " + e.message);
-    if (e.status === 409) loadStatus();
+    if (e.status === 409) loadStatus(true);
   }
 });
 
@@ -836,7 +838,7 @@ async function loadDeploys() {
                 : h("span", { title: r.error || "" }, badge(r.status, label));
             }))))));
     }) : [h("div", { class: "empty" }, "No deploys yet.")]));
-    if (wasBusy && !busy) loadStatus(); // pipelines just finished: show the new versions
+    if (wasBusy && !busy) loadStatus(true); // pipelines just finished: show the new versions
     wasBusy = busy;
   } catch (e) {
     if (e.status === 401) return;
@@ -920,6 +922,10 @@ $("copy-redirect").onclick = async () => {
   try { await navigator.clipboard.writeText($("settings-form").redirect.value); toast("Redirect URI copied"); }
   catch { $("settings-form").redirect.select(); }
 };
+// filled returns the editor rows the user typed into; untouched blank rows
+// (like the one shown on first setup) are not sent.
+const filled = (id) => [...$(id).children].filter((r) => [...r.querySelectorAll("input")].some((i) => i.value.trim()));
+
 $("settings-form").onsubmit = async (ev) => {
   ev.preventDefault();
   const f = ev.target;
@@ -934,8 +940,8 @@ $("settings-form").onsubmit = async (ev) => {
     poll_seconds: Number(f.poll.value),
     trigger_as: f.trigger_as.value, environment_template: f.env.value, api_environment_template: f.api_env.value,
     pipeline_inputs: inputs,
-    sites: [...$("site-rows").children].map((r) => ({ name: r.children[0].value, version_url: r.children[1].value })),
-    services: [...$("svc-rows").children].map((r) => ({
+    sites: filled("site-rows").map((r) => ({ name: r.children[0].value, version_url: r.children[1].value })),
+    services: filled("svc-rows").map((r) => ({
       name: r.children[0].value, postfix: r.children[1].value, kind: r.children[2].value,
       sites: r.children[3].value.split(",").map((x) => x.trim()).filter(Boolean),
     })),

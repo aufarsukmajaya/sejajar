@@ -187,6 +187,11 @@ func (s *Store) RecordSnapshot(ctx context.Context, snap *Snapshot) (int, error)
 
 	var changed []model.SiteVersions
 	for _, c := range snap.Cells {
+		// UNKNOWN means GitLab didn't answer, not that anything changed;
+		// recording it would fill the history with flip-flops.
+		if c.State == "UNKNOWN" {
+			continue
+		}
 		row := model.SiteVersions{Site: c.Site, Service: c.Service, Postfix: c.Postfix, State: c.State, Source: c.Source,
 			CommitSha: c.Commit, Error: c.Error, Pending: "[]", Unknown: "[]"}
 		if c.Schema != nil {

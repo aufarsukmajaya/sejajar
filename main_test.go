@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"maps"
 	"net/http"
@@ -94,9 +95,22 @@ func TestValidate(t *testing.T) {
 		"bad input name":            func(c *Config) { c.PipelineInputs = map[string]string{"BAD-NAME": "x"} },
 		"version url not http":      func(c *Config) { c.Sites[0].VersionURL = "{site}.example.com/version" },
 		"bad trigger":               func(c *Config) { c.TriggerAs = "webhook" },
+		"inputs can't tell variants apart": func(c *Config) {
+			c.PipelineInputs = map[string]string{"SITE": "{site}", "SERVICE": "{service}"} // api and api-x would deploy the same
+		},
+		"inputs set but empty":            func(c *Config) { c.PipelineInputs = map[string]string{} },
+		"environment without {postfix}":   func(c *Config) { c.EnvironmentTemplate = "{site}-{service}" },
+		"API environment without {site}":  func(c *Config) { c.APIEnvironmentTemplate = "{service}{postfix}-stable" },
+		"version url shared by every API": func(c *Config) { c.Sites[0].VersionURL = "https://a.example.com/version" },
+		"version url without {postfix}":   func(c *Config) { c.Sites[1].VersionURL = "https://b.example.com/{service}/version" },
 	}
-	if err := testConfig().validate(); err != nil {
+	c := testConfig()
+	c.Sites[0].VersionURL = "https://a.example.com/{service}/version" // no postfixed API on a
+	if err := c.validate(); err != nil {
 		t.Fatalf("valid config: %v", err)
+	}
+	if !maps.Equal(c.PipelineInputs, defaultInputs()) {
+		t.Errorf("no pipeline inputs should mean the defaults, got %v", c.PipelineInputs)
 	}
 	for name, breakIt := range cases {
 		c := testConfig()
@@ -104,6 +118,51 @@ func TestValidate(t *testing.T) {
 		if err := c.validate(); err == nil {
 			t.Errorf("%s: no error", name)
 		}
+	}
+}
+
+// TestSchemaUpgrade applies schema.sql over the first release's schema: the
+// tables exist already, so every new column must come from an ALTER.
+func TestSchemaUpgrade(t *testing.T) {
+	dsn := os.Getenv("SEJAJAR_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("SEJAJAR_TEST_DATABASE_URL not set")
+	}
+	v1, err := os.ReadFile("testdata/schema_v1.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	conn, err := db.Conn(ctx) // search_path is per connection
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	for _, q := range []string{"DROP SCHEMA IF EXISTS upgrade_test CASCADE", "CREATE SCHEMA upgrade_test", "SET search_path TO upgrade_test", string(v1)} {
+		if _, err := conn.ExecContext(ctx, q); err != nil {
+			t.Fatalf("%.40s: %v", q, err)
+		}
+	}
+	defer db.ExecContext(ctx, "DROP SCHEMA IF EXISTS upgrade_test CASCADE")
+	if _, err := conn.ExecContext(ctx, schemaSQL); err != nil {
+		t.Fatalf("upgrade from v1: %v", err)
+	}
+	var inputs string
+	if err := conn.QueryRowContext(ctx, "SELECT pipeline_inputs::text FROM settings").Scan(&inputs); err != nil || !strings.Contains(inputs, "{postfix}") {
+		t.Errorf("settings after upgrade: %q, %v", inputs, err)
+	}
+	if _, err := conn.ExecContext(ctx, "INSERT INTO deploys (created_by, branch, sha) VALUES ('t', 'main', 'x'); "+
+		"INSERT INTO deploy_runs (deploy_id, site, service, postfix, pipeline_sha, status) VALUES (1, 's', 'api', '', 'x', 'running'); "+
+		"INSERT INTO site_versions (site, service, postfix, state, source) VALUES ('s', 'api', '', 'OK', 'version')"); err != nil {
+		t.Errorf("writing the new columns after upgrade: %v", err)
+	}
+	if _, err := conn.ExecContext(ctx, schemaSQL); err != nil {
+		t.Errorf("schema.sql is not idempotent: %v", err)
 	}
 }
 
@@ -207,7 +266,7 @@ func TestEndToEnd(t *testing.T) {
 	settings := map[string]any{"gitlab": map[string]string{"url": gl.URL, "project": "acme/app", "branch": "main"},
 		"poll_seconds": 30, "version_token": "vt", "services": services,
 		"environment_template": "{site}-{service}{postfix}", "trigger_as": "inputs",
-		"pipeline_inputs": map[string]string{"SITE": "{site}", "SERVICE": "{service}", "POSTFIX": "{postfix}"}}
+		"pipeline_inputs": map[string]string{"SITE": "{site}", "SERVICE": "{service}", "POSTFIX": "{postfix}", "DEPLOY_SHA": "{sha}"}}
 	settings["sites"] = append(slices.Clone(sites), map[string]string{"name": "bad name"})
 	if code := call("PUT", "/api/settings", "application/json", settings, nil); code != http.StatusBadRequest {
 		t.Errorf("invalid site name: %d, want 400", code)
@@ -268,9 +327,14 @@ func TestEndToEnd(t *testing.T) {
 		t.Errorf("medan/api-core = %+v", c)
 	}
 
-	// 2. an unchanged fleet records nothing new
+	// 2. an unchanged fleet records nothing new, and a cell GitLab didn't
+	// answer for (UNKNOWN) is not a change
 	if n, err := store.RecordSnapshot(ctx, &snap); err != nil || n != 0 {
 		t.Fatalf("second record: n=%d err=%v, want 0 rows", n, err)
+	}
+	blip := Snapshot{Cells: []Cell{{Site: "medan", Service: "worker-sync", State: "UNKNOWN", Source: "gitlab", Error: "502"}}}
+	if n, err := store.RecordSnapshot(ctx, &blip); err != nil || n != 0 {
+		t.Fatalf("UNKNOWN cell recorded: n=%d err=%v", n, err)
 	}
 
 	// 3. deploy guards
@@ -334,7 +398,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Errorf("deploy = %+v", deploys[0])
 	}
 	partner := runs["surabaya/api-core-partner"].PipelineID
-	if in := m.Inputs(partner); !maps.Equal(in, map[string]string{"SITE": "surabaya", "SERVICE": "api-core", "POSTFIX": "-partner"}) {
+	if in := m.Inputs(partner); !maps.Equal(in, map[string]string{"SITE": "surabaya", "SERVICE": "api-core", "POSTFIX": "-partner", "DEPLOY_SHA": snap.Head}) {
 		t.Errorf("pipeline inputs = %v", in)
 	}
 	if m.TriggeredBy(partner) != "deploy-bot" {
@@ -342,7 +406,7 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	// 5. the deployed cells converged, and the tracker kept their history
-	call("GET", "/api/status", "", nil, &snap)
+	call("GET", "/api/status?fresh", "", nil, &snap)
 	got = cells()
 	for _, tg := range targets {
 		k := tg["site"] + "/" + tg["service"] + tg["postfix"]

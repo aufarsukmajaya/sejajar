@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,7 +26,7 @@ type pipeline struct {
 	WebURL string `json:"web_url"`
 }
 
-func (g gitlab) do(method, path string, body, out any) error {
+func (g gitlab) do(ctx context.Context, method, path string, body, out any) error {
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -34,7 +35,7 @@ func (g gitlab) do(method, path string, body, out any) error {
 		}
 		rd = bytes.NewReader(b)
 	}
-	req, err := http.NewRequest(method, g.base+path, rd)
+	req, err := http.NewRequestWithContext(ctx, method, g.base+path, rd)
 	if err != nil {
 		return err
 	}
@@ -43,27 +44,27 @@ func (g gitlab) do(method, path string, body, out any) error {
 	return doJSON(req, out)
 }
 
-func (g gitlab) branchHead(branch string) (string, error) {
+func (g gitlab) branchHead(ctx context.Context, branch string) (string, error) {
 	var b struct {
 		Commit struct {
 			ID string `json:"id"`
 		} `json:"commit"`
 	}
-	err := g.do(http.MethodGet, "/repository/branches/"+url.PathEscape(branch), nil, &b)
+	err := g.do(ctx, http.MethodGet, "/repository/branches/"+url.PathEscape(branch), nil, &b)
 	return b.Commit.ID, err
 }
 
-func (g gitlab) commitsBetween(from, to string) (int, error) {
+func (g gitlab) commitsBetween(ctx context.Context, from, to string) (int, error) {
 	var c struct {
 		Commits []json.RawMessage `json:"commits"`
 	}
-	err := g.do(http.MethodGet, "/repository/compare?straight=true&from="+url.QueryEscape(from)+"&to="+url.QueryEscape(to), nil, &c)
+	err := g.do(ctx, http.MethodGet, "/repository/compare?straight=true&from="+url.QueryEscape(from)+"&to="+url.QueryEscape(to), nil, &c)
 	return len(c.Commits), err
 }
 
 // triggerPipeline creates a pipeline on ref, passing vals as spec:inputs
 // (as = "inputs") or as CI variables.
-func (g gitlab) triggerPipeline(ref string, vals map[string]string, as string) (pipeline, error) {
+func (g gitlab) triggerPipeline(ctx context.Context, ref string, vals map[string]string, as string) (pipeline, error) {
 	body := map[string]any{"ref": ref}
 	if as == "variables" {
 		type kv struct {
@@ -79,7 +80,7 @@ func (g gitlab) triggerPipeline(ref string, vals map[string]string, as string) (
 		body["inputs"] = vals
 	}
 	var p pipeline
-	err := g.do(http.MethodPost, "/pipeline", body, &p)
+	err := g.do(ctx, http.MethodPost, "/pipeline", body, &p)
 	return p, err
 }
 
@@ -94,28 +95,28 @@ type deployment struct {
 }
 
 // lastDeployment is the environment's latest successful deployment, nil if none.
-func (g gitlab) lastDeployment(env string) (*deployment, error) {
+func (g gitlab) lastDeployment(ctx context.Context, env string) (*deployment, error) {
 	q := url.Values{"environment": {env}, "status": {"success"}, "order_by": {"id"}, "sort": {"desc"}, "per_page": {"1"}}
 	var ds []deployment
-	if err := g.do(http.MethodGet, "/deployments?"+q.Encode(), nil, &ds); err != nil || len(ds) == 0 {
+	if err := g.do(ctx, http.MethodGet, "/deployments?"+q.Encode(), nil, &ds); err != nil || len(ds) == 0 {
 		return nil, err
 	}
 	return &ds[0], nil
 }
 
-func (g gitlab) pipeline(id int64) (pipeline, error) {
+func (g gitlab) pipeline(ctx context.Context, id int64) (pipeline, error) {
 	var p pipeline
-	err := g.do(http.MethodGet, fmt.Sprintf("/pipelines/%d", id), nil, &p)
+	err := g.do(ctx, http.MethodGet, fmt.Sprintf("/pipelines/%d", id), nil, &p)
 	return p, err
 }
 
 // memberLevel returns the user's effective access level on the project
 // (inherited from groups included), 0 when not a member.
-func (g gitlab) memberLevel(userID int64) (int, error) {
+func (g gitlab) memberLevel(ctx context.Context, userID int64) (int, error) {
 	var m struct {
 		AccessLevel int `json:"access_level"`
 	}
-	err := g.do(http.MethodGet, fmt.Sprintf("/members/all/%d", userID), nil, &m)
+	err := g.do(ctx, http.MethodGet, fmt.Sprintf("/members/all/%d", userID), nil, &m)
 	if he, ok := errors.AsType[*httpError](err); ok && he.code == http.StatusNotFound {
 		return 0, nil
 	}

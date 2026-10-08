@@ -256,7 +256,8 @@ func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
 	reply(w, 200, out)
 }
 
-// createPipeline reads SITE, SERVICE and POSTFIX from spec:inputs or CI variables.
+// createPipeline reads SITE, SERVICE, POSTFIX and DEPLOY_SHA from spec:inputs
+// or CI variables.
 func (s *Server) createPipeline(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Ref       string                        `json:"ref"`
@@ -289,8 +290,13 @@ func (s *Server) createPipeline(w http.ResponseWriter, r *http.Request) {
 		}
 		by = u.Username
 	}
+	// GitLab runs the branch head; a DEPLOY_SHA input pins what the job builds.
+	sha := s.head()
+	if pin := vals["DEPLOY_SHA"]; pin != "" && s.index(pin) >= 0 {
+		sha = pin
+	}
 	s.nextID++
-	p := &pipeline{ID: s.nextID, SHA: s.head(), Status: "running", WebURL: fmt.Sprintf("http://%s/pipelines/%d", r.Host, s.nextID),
+	p := &pipeline{ID: s.nextID, SHA: sha, Status: "running", WebURL: fmt.Sprintf("http://%s/pipelines/%d", r.Host, s.nextID),
 		site: vals["SITE"], service: Services[i], inputs: vals}
 	p.User.Username = by
 	s.pipelines[p.ID] = p

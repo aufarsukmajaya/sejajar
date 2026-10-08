@@ -128,11 +128,11 @@ func (s *server) refresh(ctx context.Context, cfg *Config, id string) (model.Ses
 	if err != nil || time.Until(row.TokenExpiresAt) >= time.Minute {
 		return row, err
 	}
-	tok, err := oauthToken(cfg, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {row.RefreshToken}})
+	tok, err := oauthToken(ctx, cfg, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {row.RefreshToken}})
 	if err != nil {
 		return row, err
 	}
-	level, err := newGitlab(cfg, s.fleet.token).memberLevel(row.UserID)
+	level, err := newGitlab(cfg, s.fleet.token).memberLevel(ctx, row.UserID)
 	if err != nil {
 		return row, err
 	}
@@ -158,10 +158,10 @@ func (t oauthTokenResponse) expiry() time.Time {
 	return time.Now().Add(time.Duration(t.ExpiresIn) * time.Second)
 }
 
-func oauthToken(cfg *Config, form url.Values) (oauthTokenResponse, error) {
+func oauthToken(ctx context.Context, cfg *Config, form url.Values) (oauthTokenResponse, error) {
 	form.Set("client_id", cfg.OAuthClientID)
 	form.Set("client_secret", cfg.OAuthSecret)
-	req, err := http.NewRequest(http.MethodPost, gitlabRoot(cfg)+"/oauth/token", strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, gitlabRoot(cfg)+"/oauth/token", strings.NewReader(form.Encode()))
 	if err != nil {
 		return oauthTokenResponse{}, err
 	}
@@ -239,7 +239,7 @@ func (s *server) gitlabCallback(w http.ResponseWriter, r *http.Request) {
 		fail("GitLab sign-in is not configured")
 		return
 	}
-	tok, err := oauthToken(cfg, url.Values{"grant_type": {"authorization_code"}, "code": {r.FormValue("code")},
+	tok, err := oauthToken(r.Context(), cfg, url.Values{"grant_type": {"authorization_code"}, "code": {r.FormValue("code")},
 		"redirect_uri": {callbackURL(r)}, "code_verifier": {verifier}})
 	if err != nil {
 		log.Printf("oauth token: %v", err)
@@ -253,14 +253,14 @@ func (s *server) gitlabCallback(w http.ResponseWriter, r *http.Request) {
 		AvatarURL string `json:"avatar_url"`
 		IsAdmin   bool   `json:"is_admin"`
 	}
-	req, _ := http.NewRequest(http.MethodGet, gitlabRoot(cfg)+"/api/v4/user", nil)
+	req, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, gitlabRoot(cfg)+"/api/v4/user", nil)
 	req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
 	if err := doJSON(req, &me); err != nil || me.ID == 0 {
 		log.Printf("oauth user: %v", err)
 		fail("could not read your GitLab profile")
 		return
 	}
-	level, err := newGitlab(cfg, s.fleet.token).memberLevel(me.ID)
+	level, err := newGitlab(cfg, s.fleet.token).memberLevel(r.Context(), me.ID)
 	if err != nil {
 		log.Printf("member level of %s: %v", me.Username, err)
 		fail("could not check your access to " + cfg.GitLab.Project)

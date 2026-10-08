@@ -9,7 +9,8 @@
     "DEPLOY_ENV": "production",
     "SITE": "{site}",
     "SERVICE": "{service}",
-    "POSTFIX": "{postfix}"
+    "POSTFIX": "{postfix}",
+    "DEPLOY_SHA": "{sha}"
   },
 
   "sites": [

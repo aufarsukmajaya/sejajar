@@ -100,12 +100,12 @@ func runServer(ctx context.Context, f *Fleet, addr string) {
 		log.Printf("first run: sign in as %s / %s, then set up GitLab sign-in in Settings", user, pw)
 	}
 
-	s := &server{fleet: f, store: f.store}
+	s := newServer(f)
 	go s.poll(ctx)
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           newHandler(f),
+		Handler:           s.routes(),
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      2 * time.Minute, // a deploy fans out one GitLab call per site
 	}
@@ -160,17 +160,13 @@ func splitList(s string) []string {
 }
 
 // printStatus prints one line per (site, service) cell; it exits 1 when any
-// shown cell is not OK, so CI can use it as a gate.
+// shown cell (jobs only when named) is not OK, so CI can use it as a gate.
 func printStatus(ctx context.Context, f *Fleet, sites, services []string) {
-	cfg, _, err := f.load(ctx)
+	snap, cfg, err := f.snapshot(ctx)
 	if err != nil {
 		fail(err)
 	}
 	if _, err := cfg.targetsFor(sites, services); err != nil {
-		fail(err)
-	}
-	snap, err := f.Snapshot(ctx)
-	if err != nil {
 		fail(err)
 	}
 
@@ -182,7 +178,10 @@ func printStatus(ctx context.Context, f *Fleet, sites, services []string) {
 		if len(sites) > 0 && !slices.Contains(sites, c.Site) || len(services) > 0 && !slices.Contains(services, c.Service+c.Postfix) {
 			continue
 		}
-		bad = bad || c.State != "OK"
+		// Jobs are one-off, like in deploy: they only gate when named.
+		if c.Kind != "job" || slices.Contains(services, c.Service+c.Postfix) {
+			bad = bad || c.State != "OK"
+		}
 		behind, db, pending, unknown := "?", "-", "-", "-"
 		if c.Behind >= 0 {
 			behind = fmt.Sprint(c.Behind)
@@ -209,7 +208,7 @@ func runDeploy(ctx context.Context, f *Fleet, sites, services []string, yes bool
 	if err != nil {
 		fail(err)
 	}
-	head, err := gl.branchHead(cfg.GitLab.Branch)
+	head, err := gl.branchHead(ctx, cfg.GitLab.Branch)
 	if err != nil {
 		fail(err)
 	}

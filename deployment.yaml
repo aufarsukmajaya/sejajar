@@ -1,6 +1,8 @@
 # Resonate on Kubernetes: kubectl apply -f deployment.yaml
 #
-# Change the lines marked CHANGE ME: the image, the two secrets and the host.
+# Change the lines marked CHANGE ME: the image and the two secrets.
+# Expose port 8090 (named http) with your own Service and Ingress, at the root
+# of a host; GitLab sign-in redirects to https://<host>/auth/callback.
 # The database must already exist; Resonate creates its own tables on start.
 # On first start the admin password is printed once:
 #   kubectl -n resonate logs deploy/resonate | grep 'first run'
@@ -75,40 +77,3 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: resonate
-  namespace: resonate
-spec:
-  selector:
-    app: resonate
-  ports:
-    - name: http
-      port: 80
-      targetPort: http
----
-# Serve it at the root of its own host; GitLab sign-in redirects to
-# https://<host>/auth/callback (shown in Settings).
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: resonate
-  namespace: resonate
-spec:
-  ingressClassName: nginx # CHANGE ME: or traefik
-  rules:
-    - host: resonate.example.com # CHANGE ME
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: resonate
-                port:
-                  name: http
-  tls:
-    - hosts: [resonate.example.com] # CHANGE ME
-      secretName: resonate-tls # CHANGE ME: or let cert-manager create it

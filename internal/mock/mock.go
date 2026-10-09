@@ -1,4 +1,4 @@
-// Package mock fakes the slice of GitLab that sejajar calls, plus a fleet of
+// Package mock fakes the slice of GitLab that resonate calls, plus a fleet of
 // sites whose APIs serve /version, so the whole flow runs locally and in tests.
 //
 // Each site has one database shared by its APIs and runs a set of services.
@@ -27,7 +27,7 @@ import (
 
 // The OAuth application the mock accepts; put these in Settings.
 const (
-	ClientID     = "sejajar-demo"
+	ClientID     = "resonate-demo"
 	ClientSecret = "demo-secret"
 )
 

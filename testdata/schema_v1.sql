@@ -1,4 +1,4 @@
--- sejajar's own schema. Applied at startup; every statement is idempotent.
+-- resonate's own schema. Applied at startup; every statement is idempotent.
 
 CREATE TABLE IF NOT EXISTS deploys (
     id         bigserial   PRIMARY KEY,

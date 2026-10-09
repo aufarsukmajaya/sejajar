@@ -1,4 +1,4 @@
-// sejajar: compare every site's running commit + DB schema against the
+// resonate: compare every site's running commit + DB schema against the
 // GitLab branch head, and fan out one deploy pipeline per site at one SHA.
 // Run as a web dashboard (serve) or from the terminal (status, deploy).
 package main
@@ -26,7 +26,7 @@ func main() {
 	yes := flag.Bool("yes", false, "deploy: actually trigger pipelines (default is dry run)")
 	addr := flag.String("addr", ":8090", "serve: listen address")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, `usage: sejajar [flags] <command>
+		fmt.Fprintln(os.Stderr, `usage: resonate [flags] <command>
 
   serve                   dashboard + API; settings and sites are edited in the dashboard
   status                  print every site's state; exits 1 if any is not OK
@@ -115,7 +115,7 @@ func runServer(ctx context.Context, f *Fleet, addr string) {
 		defer cancel()
 		_ = srv.Shutdown(shut)
 	}()
-	log.Printf("sejajar listening on %s", addr)
+	log.Printf("resonate listening on %s", addr)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		fail(err)
 	}
@@ -123,7 +123,7 @@ func runServer(ctx context.Context, f *Fleet, addr string) {
 
 func importConfig(ctx context.Context, store *Store, path string) {
 	if path == "" {
-		fail(errors.New("usage: sejajar import <sites.json>"))
+		fail(errors.New("usage: resonate import <sites.json>"))
 	}
 	cfg, err := readConfigFile(path)
 	if err != nil {
@@ -250,6 +250,6 @@ func short(sha string) string {
 }
 
 func fail(err error) {
-	fmt.Fprintln(os.Stderr, "sejajar:", err)
+	fmt.Fprintln(os.Stderr, "resonate:", err)
 	os.Exit(1)
 }

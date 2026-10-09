@@ -9,8 +9,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/aufarsukmajaya/sejajar/jet/sejajar/public/model"
-	"github.com/aufarsukmajaya/sejajar/jet/sejajar/public/table"
+	"github.com/aufarsukmajaya/resonate/jet/resonate/public/model"
+	"github.com/aufarsukmajaya/resonate/jet/resonate/public/table"
 
 	pg "github.com/go-jet/jet/v2/postgres"
 	_ "github.com/jackc/pgx/v5/stdlib"

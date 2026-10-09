@@ -1,12 +1,22 @@
-# Sejajar
+# Resonate
 
-*Sejajar* (Indonesian: "aligned") keeps every site on the same code and DB schema as `main`.
+*Resonate* keeps every site on the same code and DB schema as `main`: each service is a gem that resonates when it runs what `main` runs.
 
 - **Fleet matrix** (`serve`): one repo, many sites, each running many services
-  (APIs, workers, jobs). Services are rows, sites are columns. Each cell shows
-  the commit it runs, how far that is behind `main`, and for APIs the DB
-  migration state. Select cells, rows or whole sites and deploy them at the
-  branch head; watch each GitLab pipeline finish.
+  (APIs, workers, jobs). Each site is a mountain and each service is a gem on
+  it (sapphire for APIs, emerald for workers, amethyst for jobs):
+  - at `main`'s head it vibrates and gives off white light;
+  - it loses colour with each commit it falls behind;
+  - more than 10 commits behind (`DRIFT` in `web/index.html`), it sways and flickers;
+  - when the service is down, it drops from its socket to the floor;
+  - pending or unknown DB migrations make it pulse amber or red.
+
+  The **Crystal / Pixel / Ink** switch above the matrix changes the style: 3D glass
+  gems on dark mountains, a pixel-art sprite range, or ink-brush ensō circles on misty mountains.
+  Each viewer's choice is saved in their own browser.
+
+  Select gems, services or whole mountains and deploy them at the branch head;
+  watch each GitLab pipeline finish.
 - **Schema tracker**: every change in what a cell runs (commit, state,
   applied/pending/unknown migrations) is stored in Postgres. Open a cell to
   see its history.
@@ -31,7 +41,7 @@ cp .env.example .env        # set GITLAB_TOKEN; DATABASE_URL defaults to the dev
 make run                    # dashboard on http://localhost:8090
 ```
 
-The database must exist (`docker exec postgres psql -U postgres -c "CREATE DATABASE sejajar"`);
+The database must exist (`docker exec postgres psql -U postgres -c "CREATE DATABASE resonate"`);
 the tables are created at startup.
 
 ## How a cell is read and deployed
@@ -56,10 +66,10 @@ as `spec:inputs` (GitLab 17.10+) or as CI variables. Settings refuses templates
 that can't tell two cells apart (no `{postfix}` while variants exist, or a
 version URL without `{service}`).
 
-A pipeline always runs the branch head. Sejajar refuses the deploy if `main`
+A pipeline always runs the branch head. Resonate refuses the deploy if `main`
 moved since you looked. Passing `{sha}` lets the CI build the confirmed commit
 (see `gitlab-ci.example.yml`), so a large deploy stays on one commit even if
-`main` moves while the pipelines are being created. Without it, Sejajar flags
+`main` moves while the pipelines are being created. Without it, Resonate flags
 any pipeline that GitLab started on a newer commit.
 
 One limit: GitLab records a deployment against the pipeline's own commit (the
@@ -77,7 +87,7 @@ select them cell by cell (or name them with `-services`).
    and set the GitLab URL, project and sites in Settings.
 2. **Turn on GitLab sign-in.** In GitLab, create an application (Admin Area →
    Applications, or the group's Settings → Applications) with:
-   - redirect URI: the one shown in Settings (`https://<sejajar-host>/auth/callback`)
+   - redirect URI: the one shown in Settings (`https://<resonate-host>/auth/callback`)
    - scope: `api`, because deploys are triggered with the signed-in user's token
    - confidential: yes
 
@@ -95,7 +105,7 @@ select them cell by cell (or name them with `-services`).
    The pipeline shows the real person as its creator. The role is re-checked
    each time the GitLab token refreshes (about every 2 hours).
 4. **Break-glass.** If GitLab sign-in is misconfigured or GitLab is down, run
-   `./bin/sejajar reset-password`. It prints a new admin password and turns
+   `./bin/resonate reset-password`. It prints a new admin password and turns
    GitLab sign-in off until the Application ID is set again.
 
 Behind a TLS proxy, pass `X-Forwarded-Proto: https`, so that cookies are marked
@@ -103,24 +113,24 @@ Secure and the redirect URI uses https. If your GitLab uses an internal CA,
 add it to the system trust store, or set `SSL_CERT_FILE` in the container.
 
 To load the configuration from a file instead of typing it in, run
-`./bin/sejajar import sites.json`. The format is in `sites.example.json`, and
+`./bin/resonate import sites.json`. The format is in `sites.example.json`, and
 the import replaces the sites and services.
 
 The terminal commands read the same database:
 
 ```bash
-./bin/sejajar status                                    # one line per cell; exits 1 if any is not OK
-./bin/sejajar -sites site-a -services api-orders status
-./bin/sejajar -sites site-a,site-b deploy               # dry run: every non-job service there
-./bin/sejajar -services job-backfill -yes deploy        # a job, on every site that runs it
+./bin/resonate status                                    # one line per cell; exits 1 if any is not OK
+./bin/resonate -sites site-a -services api-orders status
+./bin/resonate -sites site-a,site-b deploy               # dry run: every non-job service there
+./bin/resonate -services job-backfill -yes deploy        # a job, on every site that runs it
 ```
 
-Container image: `docker build -t sejajar .` and pass the two env vars.
+Container image: `docker build -t resonate .` and pass the two env vars.
 
 ## Demo
 
 ```bash
-make demo   # own database (sejajar_demo), fake GitLab, 5 sites x 6 services, http://127.0.0.1:8090
+make demo   # own database (resonate_demo), fake GitLab, 5 sites x 6 services, http://127.0.0.1:8090
 curl -X POST localhost:9999/mock/push                  # merge a commit (with a new migration) to main
 curl -X POST localhost:9999/mock/sites/makassar/toggle  # take a site's DB down / bring it back
 ```
@@ -167,9 +177,9 @@ their pipelines) or `luar` (not a member: sign-in refused).
 | `store.go`, `schema.sql`, `jet/` | Postgres storage. `jet/` is generated (`make gen-jet`), so don't hand-edit it |
 | `auth.go` | GitLab OAuth, sessions, roles, setup password (PBKDF2) |
 | `server.go`, `web/` | HTTP API, embedded dashboard (Cormorant Garamond, OFL, in `web/fonts`) |
-| `internal/mock`, `cmd/sejajar-mock` | Fake GitLab (API + OAuth) and fake sites for the demo and the end-to-end test |
+| `internal/mock`, `cmd/resonate-mock` | Fake GitLab (API + OAuth) and fake sites for the demo and the end-to-end test |
 | `VERSION_API.md` | The contract each API must serve at `/version` |
-| `gitlab-ci.example.yml` | A deploy pipeline sejajar can drive: inputs, environment naming, migrate then roll out |
+| `gitlab-ci.example.yml` | A deploy pipeline resonate can drive: inputs, environment naming, migrate then roll out |
 
 `make test` runs the unit tests plus an end-to-end test (API → mock GitLab → Postgres)
-against the `sejajar_test` database.
+against the `resonate_test` database.

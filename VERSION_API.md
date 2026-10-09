@@ -1,8 +1,8 @@
 # Version API spec
 
-Every API service exposes this endpoint; sejajar polls it on each site, at the
+Every API service exposes this endpoint; resonate polls it on each site, at the
 site's version URL template (`{site}`, `{service}`, `{postfix}` filled in).
-Workers and jobs don't need it: sejajar reads their last successful GitLab
+Workers and jobs don't need it: resonate reads their last successful GitLab
 deployment instead.
 
 ## Request
@@ -46,14 +46,14 @@ differs only by case.
 - The endpoint must answer even while migrations are pending. Do not gate it
   behind the readiness probe.
 - If the DB can't be reached, return `503` with `{"commit": "...", "error": "db unreachable"}`.
-  Sejajar shows the cell as DOWN.
+  Resonate shows the cell as DOWN.
 - Run one indexed `SELECT` per call. A short cache (≤ 30s) is fine.
 
 ## Security
 
 The response reveals the commit and migration names. Serve it only on an
 internal ingress, or require a static bearer token (`VERSION_TOKEN`, the same
-one on every site, entered in sejajar's Settings and kept in GitLab CI/CD variables as masked + protected). Never
+one on every site, entered in resonate's Settings and kept in GitLab CI/CD variables as masked + protected). Never
 include connection strings, hostnames or env values in the response.
 
 ## Example (Go, gormigrate)

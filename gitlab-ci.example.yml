@@ -1,5 +1,5 @@
-# A deploy pipeline sejajar can drive, for an app repo with many services.
-# Sejajar creates one pipeline per (site, service) cell on the branch, with
+# A deploy pipeline resonate can drive, for an app repo with many services.
+# Resonate creates one pipeline per (site, service) cell on the branch, with
 # the inputs set in Settings, e.g.:
 #
 #   SITE={site}  SERVICE={service}  POSTFIX={postfix}  DEPLOY_SHA={sha}
@@ -9,7 +9,7 @@
 # main moves meanwhile.
 #
 # The deploy job must record a GitLab environment named like Settings'
-# environment template ("{site}-{service}{postfix}" here). That is how sejajar
+# environment template ("{site}-{service}{postfix}" here). That is how resonate
 # knows what each worker and job runs, since they expose no /version.
 #
 # Assumes: the build stage pushes $CI_REGISTRY_IMAGE/$SERVICE:<sha> for main's commits;

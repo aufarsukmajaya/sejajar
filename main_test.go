@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aufarsukmajaya/sejajar/internal/mock"
+	"github.com/aufarsukmajaya/resonate/internal/mock"
 )
 
 func TestClassify(t *testing.T) {
@@ -124,9 +124,9 @@ func TestValidate(t *testing.T) {
 // TestSchemaUpgrade applies schema.sql over the first release's schema: the
 // tables exist already, so every new column must come from an ALTER.
 func TestSchemaUpgrade(t *testing.T) {
-	dsn := os.Getenv("SEJAJAR_TEST_DATABASE_URL")
+	dsn := os.Getenv("RESONATE_TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("SEJAJAR_TEST_DATABASE_URL not set")
+		t.Skip("RESONATE_TEST_DATABASE_URL not set")
 	}
 	v1, err := os.ReadFile("testdata/schema_v1.sql")
 	if err != nil {
@@ -177,12 +177,12 @@ func TestPassword(t *testing.T) {
 }
 
 // TestEndToEnd drives the HTTP API against the mock GitLab and a real
-// Postgres. Run with SEJAJAR_TEST_DATABASE_URL pointing at a scratch database;
+// Postgres. Run with RESONATE_TEST_DATABASE_URL pointing at a scratch database;
 // the test truncates its tables.
 func TestEndToEnd(t *testing.T) {
-	dsn := os.Getenv("SEJAJAR_TEST_DATABASE_URL")
+	dsn := os.Getenv("RESONATE_TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("SEJAJAR_TEST_DATABASE_URL not set")
+		t.Skip("RESONATE_TEST_DATABASE_URL not set")
 	}
 	ctx := context.Background()
 	store, err := openStore(ctx, dsn)

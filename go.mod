@@ -1,4 +1,4 @@
-module github.com/aufarsukmajaya/sejajar
+module github.com/aufarsukmajaya/resonate
 
 go 1.27.1
 

@@ -1,6 +1,6 @@
 {
   "gitlab": { "url": "http://127.0.0.1:9999", "project": "acme/app", "branch": "main" },
-  "oauth_client_id": "sejajar-demo",
+  "oauth_client_id": "resonate-demo",
   "oauth_secret": "demo-secret",
   "environment_template": "{site}-{service}{postfix}",
   "pipeline_inputs": { "SITE": "{site}", "SERVICE": "{service}", "POSTFIX": "{postfix}", "DEPLOY_SHA": "{sha}" },

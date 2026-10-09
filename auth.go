@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aufarsukmajaya/sejajar/jet/sejajar/public/model"
+	"github.com/aufarsukmajaya/resonate/jet/resonate/public/model"
 
 	"github.com/go-jet/jet/v2/qrm"
 )

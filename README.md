@@ -11,8 +11,8 @@
   - when the service is down, it drops from its socket to the floor;
   - pending or unknown DB migrations make it pulse amber or red.
 
-  The **Crystal / Pixel / Ink** switch above the matrix changes the style: 3D glass
-  gems on dark mountains, a pixel-art sprite range, or ink-brush ensō circles on misty mountains.
+  The **Pixel / Ink** switch above the matrix changes the style: a pixel-art sprite
+  range, or ink-brush ensō circles on misty mountains.
   Each viewer's choice is saved in their own browser.
 
   Select gems, services or whole mountains and deploy them at the branch head;

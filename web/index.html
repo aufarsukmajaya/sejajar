@@ -102,7 +102,7 @@ header .wordmark { font-size: 24px; letter-spacing: .26em; }
 .me .who { display: grid; line-height: 1.15; font-size: 12.5px; }
 .me .who small { color: var(--muted); font-size: 11px; }
 
-main { max-width: 1440px; margin: 0 auto; padding: 28px clamp(16px, 4vw, 40px) 72px; display: grid; gap: 22px; }
+main { padding: 28px clamp(16px, 4vw, 40px) 72px; display: grid; gap: 22px; }
 #app.shown .reveal { animation: rise .9s var(--ease) both; animation-delay: calc(var(--i, 0) * 90ms + 150ms); }
 @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.995); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
 
@@ -122,11 +122,13 @@ section.panel { border-radius: var(--r-lg); background: var(--panel); box-shadow
 
 /* ---------- matrix ---------- */
 .fleet { display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+.fleet:has(> .inspector[hidden]) { grid-template-columns: minmax(0, 1fr); }
+.inspector[hidden] { display: none; }
 .matrix-wrap { overflow: auto; max-height: min(72vh, 900px); }
 table.matrix { border-collapse: separate; border-spacing: 0; min-width: 100%; }
 .matrix th, .matrix td { padding: 0; }
 .matrix thead th { position: sticky; top: 0; z-index: 2; background: var(--panel-solid); border-bottom: 1px solid var(--line); }
-.matrix th.corner, .matrix th.svc { position: sticky; left: 0; z-index: 1; background: var(--panel-solid); border-right: 1px solid var(--line); text-align: left; }
+.matrix th.corner, .matrix th.svc { width: 1%; white-space: nowrap; position: sticky; left: 0; z-index: 1; background: var(--panel-solid); border-right: 1px solid var(--line); text-align: left; }
 .matrix th.corner { z-index: 3; padding: 10px 16px; font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .16em; vertical-align: bottom; }
 .colhead { all: unset; box-sizing: border-box; display: grid; gap: 4px; justify-items: center; width: 100%; padding: 10px 8px 9px; cursor: pointer; border-radius: 0; transition: background .3s; }
 .colhead:hover { background: rgb(212 175 55 / .07); }
@@ -173,31 +175,14 @@ table.matrix { position: relative; z-index: 1; }
 @keyframes sway { from { transform: rotate(-10deg); } to { transform: rotate(10deg); } }
 @keyframes flicker { 0%, 100% { opacity: .9; } 6% { opacity: .2; } 9% { opacity: .85; } 44% { opacity: .95; } 47% { opacity: .3; } 50% { opacity: .8; } 52% { opacity: .25; } 55% { opacity: .9; } }
 @keyframes throb { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
-@keyframes breathe { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .7; transform: scale(.9); } }
-@keyframes twinkle { 0%, 72%, 100% { opacity: 0; transform: scale(.2) rotate(0); } 82% { opacity: 1; transform: scale(1) rotate(45deg); } }
-
-/* crystal: a 3D brilliant of 16 glass facets and a table, spinning in perspective */
-.g-crystal .halo { position: absolute; inset: -6px; border-radius: 50%;
-  background: radial-gradient(circle, rgb(255 255 255 / calc(.5 * var(--light))) 0, hsl(var(--hue) 95% 70% / calc(.35 * var(--light))) 30%, transparent 66%); }
-.g-crystal .jit { perspective: 300px; transform-style: preserve-3d; }
-.g-crystal .tilt { transform-style: preserve-3d; transform: rotateX(-20deg); }
-.g-crystal .spin { position: relative; width: 0; height: 0; transform-style: preserve-3d; animation: spinY calc(3s * var(--spin-k)) linear infinite; }
-.g-crystal .f { position: absolute; backface-visibility: visible; }
-.g-crystal .glint { position: absolute; left: 7px; top: 3px; width: 14px; height: 14px; background: #fff; opacity: 0;
-  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%); }
-@keyframes spinY { to { transform: rotateY(360deg); } }
-.g-crystal.m-ok .jit { animation: buzz .09s linear infinite; }
-.g-crystal.m-ok .halo { animation: breathe 1.6s ease-in-out infinite; }
-.g-crystal.m-ok .glint { animation: twinkle 2.6s ease-in-out infinite var(--tw); }
-.g-crystal:is(.m-drift, .m-down, .m-unknown) .spin { animation-play-state: paused; }
-.g-crystal.m-pending .halo { background: radial-gradient(circle, rgb(240 196 108 / .6) 0, rgb(240 196 108 / .22) 35%, transparent 66%); animation: throb 1.6s ease-in-out infinite; }
-.g-crystal.m-ahead .halo { background: radial-gradient(circle, rgb(255 143 128 / .65) 0, rgb(255 143 128 / .25) 35%, transparent 66%); animation: throb 1.1s ease-in-out infinite; }
 
 /* pixel: a 16x13 sprite with eight spin frames */
-.g-pixel .px { position: relative; width: 48px; height: 39px; image-rendering: pixelated; background-size: 384px 39px; animation: frames calc(.72s * var(--spin-k)) steps(8) infinite; }
+.g-pixel .px { position: relative; width: 48px; height: 39px; }
+.g-pixel .win { width: 48px; height: 39px; overflow: hidden; }
+.g-pixel .strip { width: 384px; height: 39px; image-rendering: pixelated; background-size: 384px 39px; animation: frames calc(.72s * var(--spin-k)) steps(8) infinite; }
 .g-pixel .spk { position: absolute; width: 3px; height: 3px; background: #fff; opacity: 0; box-shadow: 3px 0 #fff, -3px 0 #fff, 0 3px #fff, 0 -3px #fff; }
 .g-pixel .spk.a { left: -5px; top: 3px; } .g-pixel .spk.b { right: -6px; top: 24px; } .g-pixel .spk.c { left: 22px; top: -9px; }
-@keyframes frames { to { background-position: -384px 0; } }
+@keyframes frames { to { transform: translateX(-384px); } }
 @keyframes blink { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
 @keyframes hop { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(3px, 0); } }
 @keyframes swaypx { 0%, 100% { transform: translateX(-3px); } 50% { transform: translateX(3px); } }
@@ -208,7 +193,7 @@ table.matrix { position: relative; z-index: 1; }
 .g-pixel.m-pending .spk { background: #ffb43c; box-shadow: 3px 0 #ffb43c, -3px 0 #ffb43c, 0 3px #ffb43c, 0 -3px #ffb43c; }
 .g-pixel.m-ahead .spk { background: #ff5a4a; box-shadow: 3px 0 #ff5a4a, -3px 0 #ff5a4a, 0 3px #ff5a4a, 0 -3px #ff5a4a; }
 .g-pixel.m-drift { animation: swaypx 1s steps(1) infinite, flickpx 1.3s steps(1) infinite; }
-.g-pixel:is(.m-drift, .m-down, .m-unknown, .socket) .px { animation: none; }
+.g-pixel:is(.m-drift, .m-down, .m-unknown, .socket) .strip { animation: none; }
 
 /* ink: a brushed ensō around a coloured wash */
 .g-ink .enso { width: 50px; height: 50px; background-size: contain; animation: spinZ calc(5s * var(--spin-k)) linear infinite; }
@@ -229,7 +214,6 @@ tr.floor th { padding: 10px 16px; font-family: var(--serif); font-style: italic;
 .fallen { all: unset; box-sizing: border-box; display: grid; justify-items: center; gap: 2px; padding: 2px 4px; border-radius: 10px; cursor: pointer; font-size: 10px; color: var(--muted); }
 .fallen:hover { background: rgb(255 240 200 / .05); }
 .fallen.sel { box-shadow: inset 0 0 0 1.5px var(--gold); }
-.g-crystal { --rest: translateY(4px) rotate(100deg) scale(.8); }
 .g-pixel { --rest: rotate(90deg) scale(.8); }
 .g-ink { --rest: scale(.8, .45) rotate(6deg); }
 .fallen .gem { transform: var(--rest); filter: brightness(.75); }
@@ -272,7 +256,9 @@ tr.floor th { padding: 10px 16px; font-family: var(--serif); font-style: italic;
 [data-gems=ink] tr.floor th, [data-gems=ink] .fallen { color: #5b5146; }
 
 .inspector { border-left: 1px solid var(--line); padding: 18px 20px; display: grid; gap: 12px; align-content: start; max-height: min(72vh, 900px); overflow: auto; }
-.inspector h3 { margin: 0; font-family: var(--serif); font-weight: 500; font-size: 24px; line-height: 1.1; }
+.inspector { position: relative; }
+.inspector .close { position: absolute; top: 10px; right: 10px; padding: 2px 9px; }
+.inspector h3 { margin: 0; padding-right: 32px; font-family: var(--serif); font-weight: 500; font-size: 24px; line-height: 1.1; }
 .inspector h3 small { display: block; font-family: var(--sans); font-size: 12px; color: var(--muted); letter-spacing: .04em; margin-top: 4px; }
 .inspector dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; }
 .inspector dt { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; padding-top: 2px; }
@@ -464,7 +450,7 @@ label > .info { grid-area: 1 / 2; justify-self: start; }
       </div>
       <div class="fleet">
         <div class="matrix-wrap"><div class="range" id="range" aria-hidden="true"></div><table class="matrix" id="matrix"></table></div>
-        <aside class="inspector" id="inspector"><div class="empty" style="padding:0">Select a cell to see what it runs.</div></aside>
+        <aside class="inspector" id="inspector" hidden></aside>
       </div>
       <div class="legend" id="legend"></div>
     </section>
@@ -605,10 +591,10 @@ const svcId = (s) => s.name + (s.postfix || "");
 // fading and starts to sway and flicker.
 const DRIFT = 10;
 
-// ---------- gems: three switchable styles ----------
+// ---------- gems: two switchable styles ----------
 const HUE = { api: 212, worker: 150, job: 285 }; // sapphire, emerald, amethyst
-const GEM_STYLES = { crystal: "Crystal", pixel: "Pixel", ink: "Ink" };
-let gemStyle = "crystal";
+const GEM_STYLES = { pixel: "Pixel", ink: "Ink" };
+let gemStyle = "pixel";
 try { const saved = localStorage.getItem("gem-style"); if (saved in GEM_STYLES) gemStyle = saved; } catch {}
 document.documentElement.dataset.gems = gemStyle;
 
@@ -638,31 +624,9 @@ function gem(kind, md, socket) {
 const gemCache = new Map();
 const cached = (key, make) => gemCache.has(key) ? gemCache.get(key) : (gemCache.set(key, make()), gemCache.get(key));
 const GEMS = {
-  // ponytail: 17 composited 3D faces per gem; fine for a few hundred cells, pause off-screen gems if fleets get bigger.
-  crystal(el, hue, loss, md, socket) {
-    if (socket) {
-      el.innerHTML = '<svg viewBox="0 0 48 40" width="40" height="34"><path d="M15 5H33L45 15V17.5L24 38L3 17.5V15Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2.5 2.5" stroke-linejoin="round"/></svg>';
-      return;
-    }
-    el.innerHTML = cached(`c${hue}|${loss}`, () => {
-      const n = 8, r = 19, rt = 10, hu = 8, hd = 22, step = 360 / n, sin = Math.sin(Math.PI / n), cos = Math.cos(Math.PI / n);
-      const w = 2 * r * sin, wt = 2 * rt * sin, d = r * cos, dt = rt * cos, deg = 180 / Math.PI;
-      const su = Math.hypot(hu, d - dt), au = Math.atan2(d - dt, hu) * deg, sd = Math.hypot(hd, d), ad = Math.atan2(d, hd) * deg;
-      const sat = 88 * (1 - loss), lk = 1 - .5 * loss, col = (l, a) => `hsl(${hue} ${sat.toFixed(0)}% ${(l * lk).toFixed(1)}% / ${a})`;
-      let faces = "";
-      for (let i = 0; i < n; i++) {
-        const v = Math.cos((i * step - 40) / deg), alt = i % 2 ? 7 : -3;
-        faces += `<i class="f" style="left:${-w / 2}px;top:${-su}px;width:${w}px;height:${su}px;transform-origin:50% 100%;clip-path:polygon(${50 - wt / w * 50}% 0,${50 + wt / w * 50}% 0,100% 100%,0 100%);transform:rotateY(${i * step}deg) translateZ(${d}px) rotateX(${au}deg);background:linear-gradient(${col(80 + v * 10, .85)},${col(56 + v * 14 + alt, .8)})"></i>`
-          + `<i class="f" style="left:${-w / 2}px;top:0;width:${w}px;height:${sd}px;transform-origin:50% 0;clip-path:polygon(0 0,100% 0,50% 100%);transform:rotateY(${i * step + step / 2}deg) translateZ(${d}px) rotateX(${-ad}deg);background:linear-gradient(${col(46 + v * 16 + alt, .82)},${col(22 + v * 8, .9)})"></i>`;
-      }
-      faces += `<i class="f" style="left:${-rt}px;top:${-rt}px;width:${rt * 2}px;height:${rt * 2}px;clip-path:polygon(30% 0,70% 0,100% 30%,100% 70%,70% 100%,30% 100%,0 70%,0 30%);transform:translateY(${-hu}px) rotateX(90deg);background:radial-gradient(circle at 35% 35%,rgb(255 255 255 / .9),${col(78, .7)} 60%)"></i>`;
-      return `<i class="halo"></i><i class="jit"><i class="tilt"><i class="spin">${faces}</i></i></i><i class="glint"></i>`;
-    });
-  },
-
   pixel(el, hue, loss, md, socket) {
-    el.innerHTML = '<i class="px"><i class="spk a"></i><i class="spk b"></i><i class="spk c"></i></i>';
-    el.firstChild.style.backgroundImage = `url(${cached(`p${hue}|${loss}|${!!socket}`, () => pixelSprite(hue, loss, socket))})`;
+    el.innerHTML = '<i class="px"><i class="win"><i class="strip"></i></i><i class="spk a"></i><i class="spk b"></i><i class="spk c"></i></i>';
+    el.querySelector(".strip").style.backgroundImage = `url(${cached(`p${hue}|${loss}|${!!socket}`, () => pixelSprite(hue, loss, socket))})`;
   },
 
   ink(el, hue, loss, md, socket) {
@@ -773,8 +737,6 @@ const silk = (() => {
   }
   function frame(now) {
     raf = requestAnimationFrame(frame);
-    const gap = mode === "full" ? 0 : 66; // ambient: ~15 fps is plenty behind the dashboard
-    if (last && now - last < gap) return;
     t += Math.min(now - (last || now - 16), 64) * .00022;
     last = now;
     draw();
@@ -784,7 +746,8 @@ const silk = (() => {
     mode(m) {
       mode = m; c.dataset.mode = m; size();
       cancelAnimationFrame(raf); last = 0;
-      if (still.matches) draw(); else raf = requestAnimationFrame(frame);
+      // ambient: drawn once, so the blurred panels over it never re-blur per frame
+      if (still.matches || m === "ambient") draw(); else raf = requestAnimationFrame(frame);
     },
   };
 })();
@@ -928,7 +891,7 @@ async function loadStatus(fresh) {
   } catch (e) {
     if (e.status === 503) { // not configured yet
       $("matrix").replaceChildren(h("tbody", {}, h("tr", {}, h("td", { class: "empty" }, me.can_configure
-        ? "Nothing to align yet. Open Settings to connect GitLab and add sites and services."
+        ? "Nothing to align yet: " + e.message.replace(/^not configured yet: /, "") + "."
         : "Not configured yet. Ask a project Maintainer to set it up."))));
       if (me.can_configure && !$("settings").open) openSettings();
     } else if (e.status !== 401) toast("Status failed: " + e.message);
@@ -1055,17 +1018,6 @@ new ResizeObserver(() => snap && drawRange(new Map())).observe($("matrix"));
 
 const jag = (n, k) => ((n >> (k * 4)) & 15) / 15 - .5; // a site's own unevenness, from its name
 const RANGES = {
-  crystal({ W, H, top, base, tall, left, peaks }) {
-    const rocks = peaks.map(({ cx, half, n }, i) => {
-      const y = (f) => (top + 6 + tall * f).toFixed(1), x = (f) => (cx + half * f).toFixed(1);
-      const rock = `${x(-1)},${base} ${x(-.62 + jag(n, 0) * .1)},${y(.5 + jag(n, 1) * .12)} ${x(-.2)},${y(.13 + jag(n, 2) * .05)} ${x(0)},${y(0)} ${x(.24)},${y(.16 + jag(n, 3) * .05)} ${x(.58 + jag(n, 4) * .1)},${y(.48 + jag(n, 5) * .12)} ${x(1)},${base}`;
-      const snow = `${x(0)},${y(0)} ${x(.12)},${y(.1)} ${x(.05)},${y(.085)} ${x(-.02)},${y(.11)} ${x(-.11)},${y(.075)}`;
-      return `<polygon points="${rock}" fill="url(#rock${i % 2})" stroke="rgba(212,175,55,.28)"/><polygon points="${snow}" fill="rgba(244,238,223,.22)"/>`;
-    });
-    return `<svg width="${W}" height="${H}"><defs>${["#2f2b25", "#28241f"].map((c, i) => `<linearGradient id="rock${i}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c}"/><stop offset="1" stop-color="#0e0c0a"/></linearGradient>`).join("")}
-      <clipPath id="sky"><rect x="${left}" y="0" width="${W}" height="${H}"/></clipPath></defs><g clip-path="url(#sky)">${rocks.join("")}</g></svg>`;
-  },
-
   // pixel: stepped peaks with snow caps under a starry sky, drawn at a third of the size and scaled up
   pixel({ W, H, top, base, left, peaks }) {
     const S = 3, c = document.createElement("canvas");
@@ -1123,7 +1075,8 @@ const RANGES = {
 
 function inspect() {
   const c = focusKey && byKey().get(focusKey);
-  if (!c) { $("inspector").replaceChildren(h("div", { class: "empty", style: "padding:0" }, "Select a cell to see what it runs.")); return; }
+  $("inspector").hidden = !c;
+  if (!c) return;
   const sc = c.schema;
   const rows = [
     ["State", badge(c.state)],
@@ -1142,6 +1095,7 @@ function inspect() {
     c.error ? ["Error", h("span", { style: "color:var(--bad)" }, c.error)] : null,
   ].filter(Boolean);
   $("inspector").replaceChildren(
+    h("button", { class: "close", "aria-label": "Close", onclick: () => { focusKey = null; render(); } }, "×"),
     h("h3", {}, c.service, c.postfix ? h("span", { style: "color:var(--gold-hi);font-style:italic" }, c.postfix) : null, h("small", {}, `${c.site} · ${c.kind}`)),
     h("dl", {}, rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])),
     h("div", {}, h("button", { onclick: () => showHistory(c) }, "Version history")));

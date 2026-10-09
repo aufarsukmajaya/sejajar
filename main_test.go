@@ -282,8 +282,9 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	// 0. settings live in the DB and apply without a restart
-	if code := call("GET", "/api/status", "", nil, nil); code != http.StatusServiceUnavailable {
-		t.Fatalf("unconfigured status: %d, want 503", code)
+	var unset map[string]string
+	if code := call("GET", "/api/status", "", nil, &unset); code != http.StatusServiceUnavailable || !strings.Contains(unset["error"], "the GitLab URL, the GitLab project") {
+		t.Fatalf("unconfigured status: %d %v, want 503 naming what's missing", code, unset)
 	}
 	var sites []map[string]any
 	for _, n := range mock.SiteNames {

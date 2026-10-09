@@ -112,10 +112,26 @@ func (c *Config) gitlabLogin() bool {
 }
 
 // ErrNotConfigured means GitLab, the sites or the services aren't set up yet.
-var ErrNotConfigured = errors.New("not configured yet: open Settings and set GitLab, the sites and the services")
+var ErrNotConfigured = errors.New("not configured yet")
 
-func (c *Config) ready() bool {
-	return c.GitLab.URL != "" && c.GitLab.Project != "" && c.GitLab.Branch != "" && len(c.Sites) > 0 && len(c.Services) > 0
+// missing names what Settings still needs before anything can be checked.
+func (c *Config) missing() []string {
+	var m []string
+	for _, f := range []struct {
+		name string
+		ok   bool
+	}{
+		{"the GitLab URL", c.GitLab.URL != ""},
+		{"the GitLab project", c.GitLab.Project != ""},
+		{"the branch", c.GitLab.Branch != ""},
+		{"a site", len(c.Sites) > 0},
+		{"a service", len(c.Services) > 0},
+	} {
+		if !f.ok {
+			m = append(m, f.name)
+		}
+	}
+	return m
 }
 
 var (
@@ -338,8 +354,8 @@ func (f *Fleet) load(ctx context.Context) (*Config, gitlab, error) {
 	if err != nil {
 		return nil, gitlab{}, err
 	}
-	if !cfg.ready() {
-		return nil, gitlab{}, ErrNotConfigured
+	if m := cfg.missing(); len(m) > 0 {
+		return nil, gitlab{}, fmt.Errorf("%w: open Settings and set %s", ErrNotConfigured, strings.Join(m, ", "))
 	}
 	return cfg, newGitlab(cfg, f.token), nil
 }
@@ -445,7 +461,7 @@ func check(ctx context.Context, gl gitlab, cfg *Config, t target, head string, b
 			c.FailedDeploy = &FailedDeploy{Status: failed.Status, SHA: failed.SHA, At: failed.UpdatedAt, PipelineURL: failed.Deployable.Pipeline.WebURL}
 		}
 		if d == nil {
-			c.State = "NEVER"
+			c.State, c.Error = "NEVER", "no successful deployment in the GitLab environment "+env
 			return c
 		}
 		c.Commit, c.DeployedAt, c.PipelineURL = d.SHA, &d.UpdatedAt, d.Deployable.Pipeline.WebURL

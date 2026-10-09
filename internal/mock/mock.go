@@ -1,5 +1,6 @@
 // Package mock fakes the slice of GitLab that resonate calls, plus a fleet of
-// sites whose APIs serve /version, so the whole flow runs locally and in tests.
+// sites whose APIs serve /version and whose pods answer through a fake GitLab
+// agent k8s-proxy, so the whole flow runs locally and in tests.
 //
 // Each site has one database shared by its APIs and runs a set of services.
 // A triggered pipeline "deploys" one service to one site after Delay: an API
@@ -51,6 +52,11 @@ var Users = []User{
 // SiteNames are the demo sites, in the order sites.demo.json lists them.
 var SiteNames = []string{"bandung", "jakarta", "makassar", "medan", "surabaya"}
 
+// AgentID is the GitLab agent for Kubernetes in a site's cluster: one cluster
+// per site, numbered in SiteNames order. Pods live in a namespace named after
+// the site, labelled app=<service><postfix>.
+func AgentID(site string) int64 { return int64(slices.Index(SiteNames, site) + 1) }
+
 // Service mirrors a sites.demo.json service row.
 type Service struct {
 	Name, Postfix, Kind string
@@ -88,6 +94,7 @@ type site struct {
 type deployment struct {
 	ID        int64     `json:"id"`
 	SHA       string    `json:"sha"`
+	Status    string    `json:"status"`
 	UpdatedAt time.Time `json:"updated_at"`
 	pipeline  string
 }
@@ -114,7 +121,9 @@ type Server struct {
 	refresh     map[string]User
 	commits     []commit // oldest first; the last one is the branch head
 	sites       map[string]*site
-	deployments map[string][]deployment // GitLab environment -> successful deployments, oldest first
+	deployments map[string][]deployment // GitLab environment -> deployments, oldest first
+	stopped     map[string]bool         // stopped GitLab environments: their pods are gone
+	crashed     map[string]bool         // "<site>/<service id>" whose pods are up but never ready
 	pipelines   map[int64]*pipeline
 	nextID      int64
 	mux         *http.ServeMux
@@ -131,7 +140,7 @@ func New() *Server {
 		"M20260913120000_job_runs",
 	}
 	s := &Server{Delay: 4 * time.Second, TokenTTL: 2 * time.Hour, sites: map[string]*site{}, pipelines: map[int64]*pipeline{},
-		deployments: map[string][]deployment{}, nextID: 1000, codes: map[string]grant{}, access: map[string]User{}, refresh: map[string]User{}}
+		deployments: map[string][]deployment{}, stopped: map[string]bool{}, crashed: map[string]bool{}, nextID: 1000, codes: map[string]grant{}, access: map[string]User{}, refresh: map[string]User{}}
 	for i, n := range []int{1, 2, 2, 3, 3, 4} { // how many migrations each commit carries
 		s.commits = append(s.commits, commit{sha: fakeSHA(i), migrations: slices.Clone(migs[:n])})
 	}
@@ -170,10 +179,21 @@ func New() *Server {
 			if i, ok := p.running[svc.ID()]; ok && i >= 0 && runsOn(svc, name) {
 				s.nextID++
 				env := Env(name, svc)
-				s.deployments[env] = append(s.deployments[env], deployment{ID: s.nextID, SHA: s.commits[i].sha, UpdatedAt: at})
+				s.deployments[env] = append(s.deployments[env], deployment{ID: s.nextID, SHA: s.commits[i].sha, Status: "success", UpdatedAt: at})
 			}
 		}
 	}
+	// Workers whose deployment history alone would look fine: makassar's
+	// worker-mailer crash-loops, its worker-sync's environment was stopped, and
+	// surabaya's worker-mailer failed to deploy the head.
+	svc := func(id string) Service {
+		return Services[slices.IndexFunc(Services, func(x Service) bool { return x.ID() == id })]
+	}
+	s.crashed["makassar/worker-mailer"] = true
+	s.stopped[Env("makassar", svc("worker-sync"))] = true
+	s.nextID++
+	env := Env("surabaya", svc("worker-mailer"))
+	s.deployments[env] = append(s.deployments[env], deployment{ID: s.nextID, SHA: s.head(), Status: "failed", UpdatedAt: at.Add(time.Hour)})
 
 	m := http.NewServeMux()
 	m.HandleFunc("GET /api/v4/projects/{project}/repository/branches/{branch}", s.branch)
@@ -181,6 +201,8 @@ func New() *Server {
 	m.HandleFunc("POST /api/v4/projects/{project}/pipeline", s.createPipeline)
 	m.HandleFunc("GET /api/v4/projects/{project}/pipelines/{id}", s.getPipeline)
 	m.HandleFunc("GET /api/v4/projects/{project}/deployments", s.listDeployments)
+	m.HandleFunc("GET /api/v4/projects/{project}/environments", s.listEnvironments)
+	m.HandleFunc("GET /-/kubernetes-agent/k8s-proxy/api/v1/namespaces/{ns}/pods", s.pods)
 	m.HandleFunc("GET /pipelines/{id}", s.getPipeline)
 	m.HandleFunc("GET /api/v4/projects/{project}/members/all/{id}", s.member)
 	m.HandleFunc("GET /api/v4/user", s.currentUser)
@@ -189,6 +211,7 @@ func New() *Server {
 	m.HandleFunc("GET /sites/{site}/{service}/version", s.version)
 	m.HandleFunc("POST /mock/push", s.push)
 	m.HandleFunc("POST /mock/sites/{site}/toggle", s.toggle)
+	m.HandleFunc("POST /mock/pods/{site}/{service}/toggle", s.togglePods)
 	s.mux = m
 	return s
 }
@@ -212,11 +235,12 @@ func (s *Server) head() string { return s.commits[len(s.commits)-1].sha }
 
 // running is the commit a service last deployed successfully on a site, "" if never.
 func (s *Server) running(site string, svc Service) string {
-	ds := s.deployments[Env(site, svc)]
-	if len(ds) == 0 {
-		return ""
+	for _, d := range slices.Backward(s.deployments[Env(site, svc)]) {
+		if d.Status == "success" {
+			return d.SHA
+		}
 	}
-	return ds[len(ds)-1].SHA
+	return ""
 }
 
 func (s *Server) branch(w http.ResponseWriter, r *http.Request) {
@@ -240,20 +264,59 @@ func (s *Server) compare(w http.ResponseWriter, r *http.Request) {
 	reply(w, 200, map[string]any{"commits": commits})
 }
 
-// listDeployments answers ?environment=&status=success&sort=desc&per_page=1.
+// listDeployments answers ?environment=[&status=]&sort=desc&per_page=1.
 func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ds := s.deployments[r.URL.Query().Get("environment")]
+	q := r.URL.Query()
 	out := []map[string]any{}
-	for _, d := range slices.Backward(ds) {
-		out = append(out, map[string]any{"id": d.ID, "sha": d.SHA, "status": "success", "updated_at": d.UpdatedAt,
+	for _, d := range slices.Backward(s.deployments[q.Get("environment")]) {
+		if st := q.Get("status"); st != "" && d.Status != st {
+			continue
+		}
+		out = append(out, map[string]any{"id": d.ID, "sha": d.SHA, "status": d.Status, "updated_at": d.UpdatedAt,
 			"deployable": map[string]any{"pipeline": map[string]string{"web_url": d.pipeline}}})
 		if len(out) == 1 {
 			break
 		}
 	}
 	reply(w, 200, out)
+}
+
+// listEnvironments answers ?states=stopped.
+func (s *Server) listEnvironments(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []map[string]string{}
+	for name := range s.stopped {
+		out = append(out, map[string]string{"name": name, "state": "stopped"})
+	}
+	reply(w, 200, out)
+}
+
+// pods plays the agent's k8s-proxy: "Bearer pat:<agent id>:<token>", one
+// cluster per site, namespace = site, labelSelector app=<service id>. A
+// deployed service runs two pods; crashed ones never turn ready.
+func (s *Server) pods(w http.ResponseWriter, r *http.Request) {
+	site := r.PathValue("ns")
+	if !slices.Contains(SiteNames, site) || bearer(r) == "" ||
+		!strings.HasPrefix(bearer(r), fmt.Sprintf("pat:%d:", AgentID(site))) {
+		reply(w, 403, map[string]string{"message": "403 Forbidden: no agent for this namespace"})
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Query().Get("labelSelector"), "app=")
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items := []map[string]any{}
+	i := slices.IndexFunc(Services, func(x Service) bool { return x.ID() == id })
+	if i >= 0 && runsOn(Services[i], site) && s.running(site, Services[i]) != "" && !s.stopped[Env(site, Services[i])] {
+		ready := map[bool]string{true: "False", false: "True"}[s.crashed[site+"/"+id]]
+		for range 2 {
+			items = append(items, map[string]any{"metadata": map[string]any{}, "status": map[string]any{
+				"phase": "Running", "conditions": []map[string]string{{"type": "Ready", "status": ready}}}})
+		}
+	}
+	reply(w, 200, map[string]any{"kind": "PodList", "items": items})
 }
 
 // createPipeline reads SITE, SERVICE, POSTFIX and DEPLOY_SHA from spec:inputs
@@ -310,8 +373,11 @@ func (s *Server) finish(p *pipeline) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st, i := s.sites[p.site], s.index(p.SHA)
+	env := Env(p.site, p.service)
+	s.nextID++
 	if p.service.Kind == "api" && st.down {
 		p.Status = "failed"
+		s.deployments[env] = append(s.deployments[env], deployment{ID: s.nextID, SHA: p.SHA, Status: "failed", UpdatedAt: time.Now().UTC(), pipeline: p.WebURL})
 		return
 	}
 	if p.service.Kind == "api" {
@@ -321,9 +387,8 @@ func (s *Server) finish(p *pipeline) {
 			}
 		}
 	}
-	s.nextID++
-	env := Env(p.site, p.service)
-	s.deployments[env] = append(s.deployments[env], deployment{ID: s.nextID, SHA: p.SHA, UpdatedAt: time.Now().UTC(), pipeline: p.WebURL})
+	s.deployments[env] = append(s.deployments[env], deployment{ID: s.nextID, SHA: p.SHA, Status: "success", UpdatedAt: time.Now().UTC(), pipeline: p.WebURL})
+	delete(s.stopped, env) // a new deployment brings a stopped environment back
 	p.Status = "success"
 }
 
@@ -400,6 +465,15 @@ func (s *Server) toggle(w http.ResponseWriter, r *http.Request) {
 	}
 	st.down = !st.down
 	reply(w, 200, map[string]bool{"down": st.down})
+}
+
+// togglePods makes a service's pods crash-loop on a site, or recover.
+func (s *Server) togglePods(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k := r.PathValue("site") + "/" + r.PathValue("service")
+	s.crashed[k] = !s.crashed[k]
+	reply(w, 200, map[string]bool{"crashed": s.crashed[k]})
 }
 
 // Inputs are the values a pipeline was created with.

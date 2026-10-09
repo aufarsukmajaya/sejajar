@@ -36,6 +36,15 @@ type Config struct {
 	PipelineInputs map[string]string `json:"pipeline_inputs"`
 	TriggerAs      string            `json:"trigger_as"` // "inputs" (spec:inputs) or "variables"
 
+	// Pods are read through the GitLab agent for Kubernetes, for cells read
+	// from GitLab deployments (workers, and APIs without a /version), on
+	// sites that name their agent.
+	Kubernetes struct {
+		ProxyURL  string `json:"proxy_url"` // "" = derived from the GitLab URL
+		Namespace string `json:"namespace"` // template
+		Selector  string `json:"selector"`  // label selector template
+	} `json:"kubernetes"`
+
 	PollSeconds   int    `json:"poll_seconds"`
 	VersionToken  string `json:"-"` // write-only through the API
 	OAuthClientID string `json:"oauth_client_id"`
@@ -44,9 +53,11 @@ type Config struct {
 
 // Site is a column. VersionURL is a template for its APIs' /version, e.g.
 // https://{site}.example.com/{service}{postfix}/version; "" when they expose none.
+// AgentID is the GitLab agent for Kubernetes in its cluster; 0 = no pod checks.
 type Site struct {
 	Name       string `json:"name"`
 	VersionURL string `json:"version_url"`
+	AgentID    int64  `json:"agent_id,omitempty"`
 }
 
 // Service is a row. A postfix is a separately deployed variant of the same
@@ -73,6 +84,18 @@ func defaultInputs() map[string]string {
 // fills {sha} in pipeline inputs.
 func expand(tmpl, site string, svc Service) string {
 	return strings.NewReplacer("{site}", site, "{service}", svc.Name, "{postfix}", svc.Postfix).Replace(tmpl)
+}
+
+// k8sProxy is the agent's Kubernetes API proxy: kas.gitlab.com on GitLab.com,
+// a path on the instance when self-managed, unless Settings name another.
+func (c *Config) k8sProxy() string {
+	if c.Kubernetes.ProxyURL != "" {
+		return strings.TrimRight(c.Kubernetes.ProxyURL, "/")
+	}
+	if u, err := url.Parse(c.GitLab.URL); err == nil && u.Host == "gitlab.com" {
+		return "https://kas.gitlab.com/k8s-proxy"
+	}
+	return strings.TrimRight(c.GitLab.URL, "/") + "/-/kubernetes-agent/k8s-proxy"
 }
 
 func (c *Config) environment(site string, svc Service) string {
@@ -108,6 +131,14 @@ func (c *Config) validate() error {
 	c.OAuthClientID = strings.TrimSpace(c.OAuthClientID)
 	c.EnvironmentTemplate = strings.TrimSpace(c.EnvironmentTemplate)
 	c.APIEnvironmentTemplate = strings.TrimSpace(c.APIEnvironmentTemplate)
+	k := &c.Kubernetes
+	k.ProxyURL, k.Namespace, k.Selector = strings.TrimSpace(k.ProxyURL), strings.TrimSpace(k.Namespace), strings.TrimSpace(k.Selector)
+	if k.Selector == "" {
+		k.Selector = "app={service}{postfix}"
+	}
+	if k.ProxyURL != "" && !isHTTP(k.ProxyURL) {
+		return errors.New("kubernetes proxy url must be http(s)://...")
+	}
 	if c.GitLab.URL != "" && !isHTTP(c.GitLab.URL) {
 		return errors.New("gitlab url must be http(s)://...")
 	}
@@ -151,6 +182,9 @@ func (c *Config) validate() error {
 		sites[s.Name] = true
 		if s.VersionURL != "" && !isHTTP(expand(s.VersionURL, s.Name, Service{Name: "svc"})) {
 			return fmt.Errorf("site %q: version url must be http(s)://... (placeholders {site} {service} {postfix})", s.Name)
+		}
+		if s.AgentID < 0 {
+			return fmt.Errorf("site %q: agent id must be a GitLab agent's id, or 0 for none", s.Name)
 		}
 	}
 	ids := map[string]bool{}
@@ -203,6 +237,26 @@ func (c *Config) validateTemplates() error {
 			return fmt.Errorf("API environment template must contain %s", p)
 		}
 	}
+	agents := map[int64]int{} // agent id -> sites using it
+	for _, site := range c.Sites {
+		if site.AgentID > 0 {
+			agents[site.AgentID]++
+		}
+	}
+	if len(agents) > 0 {
+		pods := c.Kubernetes.Namespace + " " + c.Kubernetes.Selector
+		if c.Kubernetes.Namespace == "" {
+			return errors.New("sites name a GitLab agent: set the pod namespace")
+		}
+		for _, p := range need[1:] { // {service}, and {postfix} when variants exist
+			if !strings.Contains(pods, p) {
+				return fmt.Errorf("pod namespace or selector must contain %s, or services would share their pods", p)
+			}
+		}
+		if slices.ContainsFunc(slices.Collect(maps.Values(agents)), func(n int) bool { return n > 1 }) && !strings.Contains(pods, "{site}") {
+			return errors.New("sites share a GitLab agent: the pod namespace or selector must contain {site}")
+		}
+	}
 	for _, site := range c.Sites {
 		if site.VersionURL == "" {
 			continue
@@ -249,7 +303,18 @@ type Cell struct {
 	DeployedAt  *time.Time `json:"deployed_at,omitempty"`
 	PipelineURL string     `json:"pipeline_url,omitempty"`
 	Schema      *Schema    `json:"schema,omitempty"`
-	Error       string     `json:"error,omitempty"`
+	Pods        *Pods      `json:"pods,omitempty"` // nil when not checked
+	// FailedDeploy is the environment's latest deployment when it failed or was
+	// canceled: the cell still runs the one before it.
+	FailedDeploy *FailedDeploy `json:"failed_deploy,omitempty"`
+	Error        string        `json:"error,omitempty"`
+}
+
+type FailedDeploy struct {
+	Status      string    `json:"status"`
+	SHA         string    `json:"sha"`
+	At          time.Time `json:"at"`
+	PipelineURL string    `json:"pipeline_url,omitempty"`
 }
 
 type Snapshot struct {
@@ -339,10 +404,14 @@ func (f *Fleet) snapshot(ctx context.Context) (*Snapshot, *Config, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("read %s head: %w", cfg.GitLab.Branch, err)
 	}
+	stopped, err := gl.stoppedEnvironments(ctx)
+	if err != nil {
+		stopped = nil // can't tell: judge cells by their deployments and pods alone
+	}
 	refs := cfg.cells()
 	out := make([]Cell, len(refs))
 	behind := &behindCache{ctx: ctx, gl: gl, head: head, m: map[string]*behindEntry{}}
-	eachLimited(len(refs), func(i int) { out[i] = check(ctx, gl, cfg, refs[i], head, behind) })
+	eachLimited(len(refs), func(i int) { out[i] = check(ctx, gl, cfg, refs[i], head, behind, stopped) })
 
 	snap := &Snapshot{Branch: cfg.GitLab.Branch, Head: head, CheckedAt: time.Now().UTC(), Services: cfg.Services, Cells: out}
 	for _, s := range cfg.Sites {
@@ -352,8 +421,9 @@ func (f *Fleet) snapshot(ctx context.Context) (*Snapshot, *Config, error) {
 }
 
 // check reads what one cell runs: live from an API's /version, otherwise from
-// the GitLab environment's last successful deployment.
-func check(ctx context.Context, gl gitlab, cfg *Config, t target, head string, behind *behindCache) Cell {
+// the GitLab environment's last successful deployment. A cell read from GitLab
+// is down when its environment was stopped or none of its pods are ready.
+func check(ctx context.Context, gl gitlab, cfg *Config, t target, head string, behind *behindCache, stopped map[string]bool) Cell {
 	c := Cell{Site: t.site.Name, Service: t.svc.Name, Postfix: t.svc.Postfix, Kind: t.svc.Kind, Behind: -1}
 	if t.svc.Kind == "api" && t.site.VersionURL != "" {
 		c.Source = "version"
@@ -365,10 +435,14 @@ func check(ctx context.Context, gl gitlab, cfg *Config, t target, head string, b
 		c.Commit, c.Schema, c.State = v.Commit, &v.Schema, classify(head, v)
 	} else {
 		c.Source = "gitlab"
-		d, err := gl.lastDeployment(ctx, cfg.environment(t.site.Name, t.svc))
+		env := cfg.environment(t.site.Name, t.svc)
+		d, failed, err := gl.running(ctx, env)
 		if err != nil {
 			c.State, c.Error = "UNKNOWN", err.Error()
 			return c
+		}
+		if failed != nil {
+			c.FailedDeploy = &FailedDeploy{Status: failed.Status, SHA: failed.SHA, At: failed.UpdatedAt, PipelineURL: failed.Deployable.Pipeline.WebURL}
 		}
 		if d == nil {
 			c.State = "NEVER"
@@ -376,6 +450,22 @@ func check(ctx context.Context, gl gitlab, cfg *Config, t target, head string, b
 		}
 		c.Commit, c.DeployedAt, c.PipelineURL = d.SHA, &d.UpdatedAt, d.Deployable.Pipeline.WebURL
 		c.State = classify(head, &Version{Commit: d.SHA})
+		switch {
+		case stopped[env]:
+			c.State, c.Error = "DOWN", "the GitLab environment "+env+" is stopped"
+		case t.svc.Kind != "job" && t.site.AgentID > 0: // a job's pods finish by design
+			p, err := countPods(ctx, cfg.k8sProxy(), t.site.AgentID, gl.token,
+				expand(cfg.Kubernetes.Namespace, t.site.Name, t.svc), expand(cfg.Kubernetes.Selector, t.site.Name, t.svc))
+			if err != nil {
+				p.Error = err.Error() // the agent didn't answer: keep the deployment's word
+			} else if p.Ready == 0 {
+				c.State, c.Error = "DOWN", "no pods running"
+				if p.Total > 0 {
+					c.Error = fmt.Sprintf("0 of %d pods ready", p.Total)
+				}
+			}
+			c.Pods = &p
+		}
 	}
 	c.Behind = behind.of(c.Commit)
 	return c

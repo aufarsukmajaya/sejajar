@@ -166,6 +166,9 @@ table.matrix { position: relative; z-index: 1; }
 .gem i { display: block; font-style: normal; }
 .gem.m-drift { transform-origin: 50% 90%; animation: sway 2.4s ease-in-out infinite alternate, flicker 2.1s linear infinite; }
 .gem.m-unknown { opacity: .4; filter: blur(.6px) grayscale(1); }
+.gem.x-failed::after { content: ""; position: absolute; z-index: 2; right: 3px; top: 3px; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 8px var(--bad); animation: throb 1.2s ease-in-out infinite; }
+[data-gems=pixel] .gem.x-failed::after { border-radius: 0; box-shadow: none; background: #ff5a4a; animation-timing-function: steps(1); }
+[data-gems=ink] .gem.x-failed::after { background: #b8322a; box-shadow: none; }
 @keyframes buzz { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(1.2px, -.9px); } 50% { transform: translate(-1px, 1px); } 75% { transform: translate(.9px, 1.1px); } }
 @keyframes sway { from { transform: rotate(-10deg); } to { transform: rotate(10deg); } }
 @keyframes flicker { 0%, 100% { opacity: .9; } 6% { opacity: .2; } 9% { opacity: .85; } 44% { opacity: .95; } 47% { opacity: .3; } 50% { opacity: .8; } 52% { opacity: .25; } 55% { opacity: .9; } }
@@ -355,7 +358,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; padding: 
 fieldset { border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px 16px; margin: 0; display: grid; gap: 12px; background: rgb(0 0 0 / .18); min-width: 0; }
 legend { font-family: var(--serif); font-size: 19px; padding: 0 8px; color: var(--gold-hi); }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
-.siterow { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 3fr) auto; gap: 8px; align-items: center; animation: rise .5s var(--ease) both; }
+.siterow { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 3fr) 92px auto; gap: 8px; align-items: center; animation: rise .5s var(--ease) both; }
 .svcrow { display: grid; grid-template-columns: minmax(120px, 2fr) minmax(70px, 1fr) 104px minmax(100px, 2fr) auto; gap: 8px; align-items: center; animation: rise .5s var(--ease) both; }
 .rowlabels { display: grid; gap: 8px; font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .12em; padding: 0 4px; }
 .hint { color: var(--muted); font-size: 12.5px; margin: 0; text-transform: none; letter-spacing: 0; }
@@ -523,7 +526,7 @@ label > .info { grid-area: 1 / 2; justify-self: start; }
       <fieldset>
         <legend>Sites <button type="button" class="info" data-tip="A site is one place your app runs, such as one customer or one region. Each site is a column on the dashboard."></button></legend>
         <p class="hint">Columns. The version URL is where the site's APIs answer <code>/version</code>; leave it blank to track APIs by their GitLab deployment too.</p>
-        <div class="siterow rowlabels"><span>Name <button type="button" class="info" data-tip="A short name: letters, digits, - or _. It fills {site} in every template, so use the name your CI and URLs use."></button></span><span>Version URL <button type="button" class="info" data-tip="Where this site’s APIs report which commit they run (see VERSION_API.md). {site}, {service} and {postfix} are filled in for each API.&#10;Example: https://{site}.example.com/{service}{postfix}/version&#10;Blank: this site’s APIs are read from GitLab deployments, like workers."></button></span><span></span></div>
+        <div class="siterow rowlabels"><span>Name <button type="button" class="info" data-tip="A short name: letters, digits, - or _. It fills {site} in every template, so use the name your CI and URLs use."></button></span><span>Version URL <button type="button" class="info" data-tip="Where this site’s APIs report which commit they run (see VERSION_API.md). {site}, {service} and {postfix} are filled in for each API.&#10;Example: https://{site}.example.com/{service}{postfix}/version&#10;Blank: this site’s APIs are read from GitLab deployments, like workers."></button></span><span>Agent ID <button type="button" class="info" data-tip="The ID of the GitLab agent for Kubernetes running in this site’s cluster. With it, Resonate looks at the pods of this site’s workers and knows when they are really down, not just deployed.&#10;Find it in GitLab: Operate → Kubernetes clusters, the number in the agent’s row.&#10;Blank or 0: no pod checks for this site."></button></span><span></span></div>
         <div id="site-rows" style="display:grid;gap:8px"></div>
         <div><button type="button" id="add-site">Add site</button></div>
         <label>Version API token (optional) <input type="password" name="vtoken" autocomplete="off"><button type="button" class="info" data-tip="A shared password your /version endpoints can require. Resonate sends it as “Authorization: Bearer …”. Only needed if your APIs check it. Leave blank to keep the current one."></button></label>
@@ -534,6 +537,15 @@ label > .info { grid-area: 1 / 2; justify-self: start; }
         <div class="svcrow rowlabels"><span>Name <button type="button" class="info" data-tip="The service’s name as your CI knows it. It fills {service}."></button></span><span>Postfix <button type="button" class="info" data-tip="For a second copy of a service that is deployed on its own. api-core with postfix -partner gets its own row, api-core-partner. It fills {postfix}. Leave blank for the normal one."></button></span><span>Kind <button type="button" class="info" data-tip="api: answers /version, so Resonate asks it directly and also sees its database migrations.&#10;worker: runs in the background. Read from its GitLab deployment.&#10;job: runs once when deployed, such as a data fix. Never picked by “Select out of date”; choose it by hand."></button></span><span>Sites <button type="button" class="info" data-tip="Which sites run this service, separated by commas, such as jakarta, bandung. Blank means every site."></button></span><span></span></div>
         <div id="svc-rows" style="display:grid;gap:8px"></div>
         <div><button type="button" id="add-svc">Add service</button></div>
+      </fieldset>
+      <fieldset>
+        <legend>Kubernetes pods <button type="button" class="info" data-tip="Deployment history says what was deployed, not whether it is still running. For sites with an Agent ID, Resonate also asks the GitLab agent for Kubernetes in that cluster how many of a service’s pods are ready. None ready: the gem falls to the floor.&#10;Used for workers, and for APIs on sites without a version URL. Jobs finish by design, so they are never checked."></button></legend>
+        <p class="hint">Resonate reads pods through your GitLab agent: no cluster credentials needed. The agent's config must grant this project <code>user_access</code>, and <code>GITLAB_TOKEN</code> needs the <code>k8s_proxy</code> scope. A stopped GitLab environment also counts as down.</p>
+        <div class="grid2">
+          <label>Namespace <input type="text" name="pod_ns" placeholder="production"><button type="button" class="info" data-tip="The Kubernetes namespace a service’s pods run in. It can use {site}, {service} and {postfix}.&#10;Example: production, or {site} if each site has its own namespace."></button></label>
+          <label>Label selector <input type="text" name="pod_sel" placeholder="app={service}{postfix}"><button type="button" class="info" data-tip="How to find one service’s pods: the labels on them, as kubectl -l takes them. It must contain {service}, so each service finds only its own pods.&#10;Example: app={service}{postfix} or app.kubernetes.io/name={service}{postfix}"></button></label>
+          <label>Proxy URL (blank = default) <input type="url" name="k8s_proxy"><button type="button" class="info" data-tip="Where GitLab’s Kubernetes proxy (KAS) answers. Leave blank for the usual place: kas.gitlab.com on GitLab.com, or /-/kubernetes-agent/k8s-proxy on your own GitLab. Set it only if your admin put KAS somewhere else."></button></label>
+        </div>
       </fieldset>
       <fieldset>
         <legend>GitLab sign-in <button type="button" class="info" data-tip="Lets people sign in with their GitLab account instead of a shared password. What they may do follows their role on the project (Maintainers can change Settings), and their deploys run as them."></button></legend>
@@ -616,7 +628,7 @@ function mood(c) {
 // never-deployed gem leaves behind. Behind gems spin slower: their resonance dies down.
 function gem(kind, md, socket) {
   const hue = HUE[kind] ?? HUE.api, loss = Math.round(md.loss * 10) / 10;
-  const el = h("div", { class: `gem g-${gemStyle} m-${md.m}${socket ? " socket" : ""}`, "aria-hidden": "true",
+  const el = h("div", { class: `gem g-${gemStyle} m-${md.m}${socket ? " socket" : ""}${md.failed ? " x-failed" : ""}`, "aria-hidden": "true",
     style: `--hue:${hue};--light:${md.m === "ok" ? 1 : md.m === "behind" ? ((1 - loss) * .5).toFixed(2) : 0};` +
       `--spin-k:${["ok", "pending", "ahead"].includes(md.m) ? 1 : 1 + loss * 4};--tw:${(-Math.random() * 2.6).toFixed(2)}s` });
   GEMS[gemStyle](el, hue, loss, md, socket);
@@ -896,7 +908,8 @@ function legend() {
     lg("drift", 1, `Drifting: over ${DRIFT} commits behind`),
     lg("pending", 0, "Schema pending"),
     lg("ahead", 0, "DB ahead"),
-    lg("down", .85, "Fallen to the floor: down", true),
+    lg("down", .85, "Fallen to the floor: down, no ready pods or environment stopped", true),
+    h("span", { class: "lg" }, gem("api", { m: "behind", loss: .3, failed: true }), "Red dot: the last deploy failed"),
     lg("unknown", 1, "Clouded: unknown"),
     h("span", {}, "· Sapphire API, emerald worker, amethyst job. Click a gem to select it, a service or a mountain to select the line."));
 }
@@ -929,7 +942,8 @@ const byKey = () => new Map(snap.cells.map((c) => [cellKey(c), c]));
 const stale = (c) => c.kind !== "job" && !["OK", "DOWN", "UNKNOWN"].includes(c.state);
 
 function cellLine(c) {
-  if (c.state === "DOWN") return "down";
+  if (c.state === "DOWN" && c.pods && !c.pods.error) return c.pods.total ? `0/${c.pods.total} ready` : "no pods";
+  if (c.state === "DOWN") return c.source === "gitlab" ? "stopped" : "down";
   if (c.state === "NEVER") return "never";
   if (c.state === "UNKNOWN") return "unknown";
   if (c.state === "DB_AHEAD") return `db +${c.schema.unknown.length}`;
@@ -985,12 +999,12 @@ function render() {
         snap.sites.map((site) => {
           const c = cells.get(keyOf(site, s.name, s.postfix));
           if (!c) return h("td", { class: "na", title: `${svcId(s)} doesn't run on ${site}` }, "·");
-          const k = cellKey(c), md = mood(c);
+          const k = cellKey(c), md = { ...mood(c), failed: !!c.failed_deploy };
           const btn = h("button", {
             class: `cellbtn m-${md.m}${selected.has(k) ? " sel" : ""}${focusKey === k ? " focus" : ""}`,
             "aria-pressed": selected.has(k) ? "true" : "false",
             "aria-label": `${svcId(s)} on ${site}: ${LABEL[c.state]}`,
-            title: c.error || `${LABEL[c.state]}${c.commit ? " · " + short(c.commit) : ""}`,
+            title: [c.error || `${LABEL[c.state]}${c.commit ? " · " + short(c.commit) : ""}`, c.failed_deploy && `last deploy ${c.failed_deploy.status}`].filter(Boolean).join(" · "),
             onclick: () => pick(k),
           }, gem(c.kind, md, md.m === "down" || md.m === "never"), h("span", { class: "st" }, cellLine(c)));
           sockets.set(k, btn);
@@ -1118,6 +1132,10 @@ function inspect() {
     ["Source", c.source === "version" ? "live /version" : "GitLab deployment"],
     c.deployed_at ? ["Deployed", when(c.deployed_at)] : null,
     c.pipeline_url ? ["Pipeline", h("a", { href: c.pipeline_url, target: "_blank", rel: "noopener" }, "open")] : null,
+    c.pods ? ["Pods", c.pods.error ? h("span", { style: "color:var(--warn)", title: c.pods.error }, "couldn't read: " + c.pods.error)
+      : `${c.pods.ready} of ${c.pods.total} ready`] : null,
+    c.failed_deploy ? ["Last deploy", h("span", { style: "color:var(--bad)" }, `${c.failed_deploy.status} · ${short(c.failed_deploy.sha)} · ${when(c.failed_deploy.at)} `,
+      c.failed_deploy.pipeline_url ? h("a", { href: c.failed_deploy.pipeline_url, target: "_blank", rel: "noopener" }, "pipeline") : null)] : null,
     sc ? ["Schema", h("span", { class: "mono" }, sc.db || "—")] : null,
     sc?.pending?.length ? ["Pending", h("ul", {}, sc.pending.map((m) => h("li", {}, m)))] : null,
     sc?.unknown?.length ? ["Unknown", h("ul", {}, sc.unknown.map((m) => h("li", {}, m)))] : null,
@@ -1156,7 +1174,7 @@ $("deploy").onclick = () => {
       picked.filter((c) => c.site === site).map((c) => badge(c.state, c.service + (c.postfix || "")))))),
     risky.length ? h("div", { class: "warnbox" }, "Check first: ",
       risky.map((c) => `${c.service}${c.postfix || ""} on ${c.site} is ${LABEL[c.state]}`).join(", "),
-      ". A DB-ahead API was migrated by a newer build; a down API's deploy will likely fail.") : null,
+      ". A DB-ahead API was migrated by a newer build; a down API's deploy will likely fail, a down worker's may bring it back.") : null,
     jobs.length ? h("div", { class: "warnbox" }, `${jobs.length} job${jobs.length > 1 ? "s" : ""} selected: a job runs once when deployed.`) : null,
   ].filter(Boolean));
   $("confirm").returnValue = "";
@@ -1245,10 +1263,11 @@ async function showHistory(c) {
 }
 
 // ---------- settings ----------
-function siteRow(site = { name: "", version_url: "" }) {
+function siteRow(site = { name: "", version_url: "", agent_id: 0 }) {
   const row = h("div", { class: "siterow" },
     h("input", { type: "text", "aria-label": "Site name", placeholder: "site-a", value: site.name, required: true, pattern: "[A-Za-z0-9_\\-]{1,64}" }),
     h("input", { type: "text", "aria-label": "Version URL template", placeholder: "https://{site}.example.com/{service}{postfix}/version", value: site.version_url }),
+    h("input", { type: "number", "aria-label": "GitLab agent ID", placeholder: "none", min: 0, step: 1, value: site.agent_id || "" }),
     h("button", { type: "button", class: "icon", title: "Remove", "aria-label": "Remove site", onclick: () => row.remove() }, "✕"));
   return row;
 }
@@ -1275,6 +1294,8 @@ async function openSettings() {
     f.env.value = c.environment_template; f.api_env.value = c.api_environment_template;
     f.inputs.value = Object.entries(c.pipeline_inputs || {}).map(([k, v]) => `${k}=${v}`).join("\n");
     f.redirect.value = c.redirect_uri;
+    f.pod_ns.value = c.kubernetes.namespace; f.pod_sel.value = c.kubernetes.selector; f.k8s_proxy.value = c.kubernetes.proxy_url;
+    f.k8s_proxy.placeholder = /^https?:\/\/gitlab\.com\/?$/.test(c.gitlab.url) ? "https://kas.gitlab.com/k8s-proxy" : `${(c.gitlab.url || "https://gitlab.example.com").replace(/\/+$/, "")}/-/kubernetes-agent/k8s-proxy`;
     f.oauth_id.value = c.oauth_client_id; f.oauth_secret.value = "";
     f.oauth_secret.placeholder = c.oauth_secret_set ? "set · leave blank to keep" : "not set";
     openSettings.secretSet = c.oauth_secret_set;
@@ -1338,7 +1359,8 @@ $("settings-form").onsubmit = async (ev) => {
     poll_seconds: Number(f.poll.value),
     trigger_as: f.trigger_as.value, environment_template: f.env.value, api_environment_template: f.api_env.value,
     pipeline_inputs: inputs,
-    sites: filled("site-rows").map((r) => ({ name: r.children[0].value, version_url: r.children[1].value })),
+    sites: filled("site-rows").map((r) => ({ name: r.children[0].value, version_url: r.children[1].value, agent_id: Number(r.children[2].value) || 0 })),
+    kubernetes: { proxy_url: f.k8s_proxy.value, namespace: f.pod_ns.value, selector: f.pod_sel.value },
     services: filled("svc-rows").map((r) => ({
       name: r.children[0].value, postfix: r.children[1].value, kind: r.children[2].value,
       sites: r.children[3].value.split(",").map((x) => x.trim()).filter(Boolean),

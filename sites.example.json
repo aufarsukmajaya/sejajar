@@ -13,9 +13,11 @@
     "DEPLOY_SHA": "{sha}"
   },
 
+  "kubernetes": { "namespace": "production", "selector": "app={service}{postfix}" },
+
   "sites": [
-    { "name": "site-a", "version_url": "https://site-a.example.com/{service}{postfix}/version" },
-    { "name": "site-b", "version_url": "https://api.site-b.example.com/{service}{postfix}/version" }
+    { "name": "site-a", "version_url": "https://site-a.example.com/{service}{postfix}/version", "agent_id": 12 },
+    { "name": "site-b", "version_url": "https://api.site-b.example.com/{service}{postfix}/version", "agent_id": 13 }
   ],
   "services": [
     { "name": "api-orders",     "kind": "api" },

@@ -10,4 +10,5 @@ package model
 type Sites struct {
 	Name       string `sql:"primary_key"`
 	VersionURL string
+	AgentID    int64
 }

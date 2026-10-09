@@ -19,6 +19,7 @@ type sitesTable struct {
 	// Columns
 	Name       postgres.ColumnString
 	VersionURL postgres.ColumnString
+	AgentID    postgres.ColumnInteger
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
@@ -62,9 +63,10 @@ func newSitesTableImpl(schemaName, tableName, alias string) sitesTable {
 	var (
 		NameColumn       = postgres.StringColumn("name")
 		VersionURLColumn = postgres.StringColumn("version_url")
-		allColumns       = postgres.ColumnList{NameColumn, VersionURLColumn}
-		mutableColumns   = postgres.ColumnList{VersionURLColumn}
-		defaultColumns   = postgres.ColumnList{VersionURLColumn}
+		AgentIDColumn    = postgres.IntegerColumn("agent_id")
+		allColumns       = postgres.ColumnList{NameColumn, VersionURLColumn, AgentIDColumn}
+		mutableColumns   = postgres.ColumnList{VersionURLColumn, AgentIDColumn}
+		defaultColumns   = postgres.ColumnList{VersionURLColumn, AgentIDColumn}
 	)
 
 	return sitesTable{
@@ -73,6 +75,7 @@ func newSitesTableImpl(schemaName, tableName, alias string) sitesTable {
 		//Columns
 		Name:       NameColumn,
 		VersionURL: VersionURLColumn,
+		AgentID:    AgentIDColumn,
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,

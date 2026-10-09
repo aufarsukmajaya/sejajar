@@ -67,6 +67,12 @@ CREATE TABLE IF NOT EXISTS settings (
     -- either is empty, the local admin password is the only way in.
     oauth_client_id          text        NOT NULL DEFAULT '',
     oauth_client_secret      text        NOT NULL DEFAULT '',
+    -- Pod checks through the GitLab agent for Kubernetes, for cells read from
+    -- GitLab deployments. '' proxy = derived from gitlab_url; namespace and
+    -- selector are templates ({site} {service} {postfix}).
+    k8s_proxy_url            text        NOT NULL DEFAULT '',
+    pod_namespace            text        NOT NULL DEFAULT '',
+    pod_selector             text        NOT NULL DEFAULT 'app={service}{postfix}',
     updated_at               timestamptz NOT NULL DEFAULT now(),
     updated_by               text        NOT NULL DEFAULT ''
 );
@@ -74,9 +80,11 @@ INSERT INTO settings (id) VALUES (true) ON CONFLICT DO NOTHING;
 
 -- The fleet's columns. version_url is a template ({site} {service} {postfix})
 -- for the APIs' /version; '' when the site's APIs don't expose one.
+-- agent_id is the GitLab agent for Kubernetes in the site's cluster; 0 = no pod checks.
 CREATE TABLE IF NOT EXISTS sites (
-    name        text PRIMARY KEY,
-    version_url text NOT NULL DEFAULT ''
+    name        text   PRIMARY KEY,
+    version_url text   NOT NULL DEFAULT '',
+    agent_id    bigint NOT NULL DEFAULT 0 CHECK (agent_id >= 0)
 );
 
 -- The fleet's rows. A postfix is a separately deployed variant of the same
@@ -120,6 +128,10 @@ ALTER TABLE settings      ADD COLUMN IF NOT EXISTS pipeline_inputs          json
 ALTER TABLE settings      ADD COLUMN IF NOT EXISTS trigger_as               text  NOT NULL DEFAULT 'inputs' CHECK (trigger_as IN ('inputs', 'variables'));
 ALTER TABLE settings      ADD COLUMN IF NOT EXISTS oauth_client_id          text  NOT NULL DEFAULT '';
 ALTER TABLE settings      ADD COLUMN IF NOT EXISTS oauth_client_secret      text  NOT NULL DEFAULT '';
+ALTER TABLE settings      ADD COLUMN IF NOT EXISTS k8s_proxy_url            text  NOT NULL DEFAULT '';
+ALTER TABLE settings      ADD COLUMN IF NOT EXISTS pod_namespace            text  NOT NULL DEFAULT '';
+ALTER TABLE settings      ADD COLUMN IF NOT EXISTS pod_selector             text  NOT NULL DEFAULT 'app={service}{postfix}';
 ALTER TABLE sites         ALTER COLUMN version_url SET DEFAULT '';
+ALTER TABLE sites         ADD COLUMN IF NOT EXISTS agent_id                 bigint NOT NULL DEFAULT 0 CHECK (agent_id >= 0);
 DROP INDEX IF EXISTS site_versions_site_observed_idx; -- superseded by the per-cell index
 CREATE INDEX IF NOT EXISTS site_versions_cell_observed_idx ON site_versions (site, service, postfix, observed_at DESC);

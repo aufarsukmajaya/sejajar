@@ -286,11 +286,12 @@ func (s *Store) GetConfig(ctx context.Context) (*Config, error) {
 		EnvironmentTemplate: row.EnvironmentTemplate, APIEnvironmentTemplate: row.APIEnvironmentTemplate, TriggerAs: row.TriggerAs,
 		OAuthClientID: row.OAuthClientID, OAuthSecret: row.OAuthClientSecret}
 	c.GitLab.URL, c.GitLab.Project, c.GitLab.Branch = row.GitlabURL, row.GitlabProject, row.GitlabBranch
+	c.Kubernetes.ProxyURL, c.Kubernetes.Namespace, c.Kubernetes.Selector = row.K8sProxyURL, row.PodNamespace, row.PodSelector
 	if err := json.Unmarshal([]byte(row.PipelineInputs), &c.PipelineInputs); err != nil {
 		return nil, fmt.Errorf("read pipeline inputs: %w", err)
 	}
 	for _, x := range sites {
-		c.Sites = append(c.Sites, Site{Name: x.Name, VersionURL: x.VersionURL})
+		c.Sites = append(c.Sites, Site{Name: x.Name, VersionURL: x.VersionURL, AgentID: x.AgentID})
 	}
 	for _, x := range services {
 		c.Services = append(c.Services, Service{Name: x.Name, Postfix: x.Postfix, Kind: x.Kind, Sites: parseList(x.Sites)})
@@ -318,10 +319,12 @@ func (s *Store) SaveConfig(ctx context.Context, c *Config, versionToken, oauthSe
 
 	cols := pg.ColumnList{table.Settings.GitlabURL, table.Settings.GitlabProject, table.Settings.GitlabBranch,
 		table.Settings.EnvironmentTemplate, table.Settings.APIEnvironmentTemplate, table.Settings.PipelineInputs, table.Settings.TriggerAs,
-		table.Settings.PollSeconds, table.Settings.OAuthClientID, table.Settings.UpdatedAt, table.Settings.UpdatedBy}
+		table.Settings.PollSeconds, table.Settings.OAuthClientID, table.Settings.UpdatedAt, table.Settings.UpdatedBy,
+		table.Settings.K8sProxyURL, table.Settings.PodNamespace, table.Settings.PodSelector}
 	vals := []any{pg.String(c.GitLab.URL), pg.String(c.GitLab.Project), pg.String(c.GitLab.Branch),
 		pg.String(c.EnvironmentTemplate), pg.String(c.APIEnvironmentTemplate), pg.Json(string(inputs)), pg.String(c.TriggerAs),
-		pg.Int32(int32(c.PollSeconds)), pg.String(c.OAuthClientID), pg.NOW(), pg.String(by)}
+		pg.Int32(int32(c.PollSeconds)), pg.String(c.OAuthClientID), pg.NOW(), pg.String(by),
+		pg.String(c.Kubernetes.ProxyURL), pg.String(c.Kubernetes.Namespace), pg.String(c.Kubernetes.Selector)}
 	if versionToken != nil {
 		cols = append(cols, table.Settings.VersionToken)
 		vals = append(vals, pg.String(*versionToken))
@@ -339,7 +342,7 @@ func (s *Store) SaveConfig(ctx context.Context, c *Config, versionToken, oauthSe
 	if len(c.Sites) > 0 {
 		rows := make([]model.Sites, len(c.Sites))
 		for i, x := range c.Sites {
-			rows[i] = model.Sites{Name: x.Name, VersionURL: x.VersionURL}
+			rows[i] = model.Sites{Name: x.Name, VersionURL: x.VersionURL, AgentID: x.AgentID}
 		}
 		if _, err := table.Sites.INSERT(table.Sites.AllColumns).MODELS(rows).ExecContext(ctx, tx); err != nil {
 			return fmt.Errorf("insert sites: %w", err)

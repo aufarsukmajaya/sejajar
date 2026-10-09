@@ -28,4 +28,7 @@ type Settings struct {
 	OAuthClientSecret      string
 	UpdatedAt              time.Time
 	UpdatedBy              string
+	K8sProxyURL            string
+	PodNamespace           string
+	PodSelector            string
 }

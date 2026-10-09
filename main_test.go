@@ -103,8 +103,17 @@ func TestValidate(t *testing.T) {
 		"API environment without {site}":  func(c *Config) { c.APIEnvironmentTemplate = "{service}{postfix}-stable" },
 		"version url shared by every API": func(c *Config) { c.Sites[0].VersionURL = "https://a.example.com/version" },
 		"version url without {postfix}":   func(c *Config) { c.Sites[1].VersionURL = "https://b.example.com/{service}/version" },
+		"agent without a pod namespace":   func(c *Config) { c.Kubernetes.Namespace = "" },
+		"pods shared by every service":    func(c *Config) { c.Kubernetes.Selector = "app=web" },
+		"shared agent, sites not apart":   func(c *Config) { c.Sites[1].AgentID = 1; c.Kubernetes.Namespace = "prod" },
+		"negative agent id":               func(c *Config) { c.Sites[1].AgentID = -2 },
+		"proxy url not http":              func(c *Config) { c.Kubernetes.ProxyURL = "kas.example.com" },
 	}
-	c := testConfig()
+	pods := func(c *Config) *Config {
+		c.Sites[0].AgentID, c.Sites[1].AgentID, c.Kubernetes.Namespace = 1, 2, "prod"
+		return c
+	}
+	c := pods(testConfig())
 	c.Sites[0].VersionURL = "https://a.example.com/{service}/version" // no postfixed API on a
 	if err := c.validate(); err != nil {
 		t.Fatalf("valid config: %v", err)
@@ -112,12 +121,33 @@ func TestValidate(t *testing.T) {
 	if !maps.Equal(c.PipelineInputs, defaultInputs()) {
 		t.Errorf("no pipeline inputs should mean the defaults, got %v", c.PipelineInputs)
 	}
+	if c.Kubernetes.Selector != "app={service}{postfix}" {
+		t.Errorf("no selector should mean the default, got %q", c.Kubernetes.Selector)
+	}
 	for name, breakIt := range cases {
-		c := testConfig()
+		c := pods(testConfig())
 		breakIt(c)
 		if err := c.validate(); err == nil {
 			t.Errorf("%s: no error", name)
 		}
+	}
+}
+
+func TestK8sProxy(t *testing.T) {
+	c := &Config{}
+	for url, want := range map[string]string{
+		"https://gitlab.com":         "https://kas.gitlab.com/k8s-proxy",
+		"https://git.example.com/":   "https://git.example.com/-/kubernetes-agent/k8s-proxy",
+		"https://example.com/gitlab": "https://example.com/gitlab/-/kubernetes-agent/k8s-proxy",
+	} {
+		c.GitLab.URL = url
+		if got := c.k8sProxy(); got != want {
+			t.Errorf("k8sProxy(%s) = %s, want %s", url, got, want)
+		}
+	}
+	c.Kubernetes.ProxyURL = "https://kas.example.com/k8s-proxy/"
+	if got := c.k8sProxy(); got != "https://kas.example.com/k8s-proxy" {
+		t.Errorf("explicit proxy = %s", got)
 	}
 }
 
@@ -255,9 +285,9 @@ func TestEndToEnd(t *testing.T) {
 	if code := call("GET", "/api/status", "", nil, nil); code != http.StatusServiceUnavailable {
 		t.Fatalf("unconfigured status: %d, want 503", code)
 	}
-	var sites []map[string]string
+	var sites []map[string]any
 	for _, n := range mock.SiteNames {
-		sites = append(sites, map[string]string{"name": n, "version_url": gl.URL + "/sites/{site}/{service}{postfix}/version"})
+		sites = append(sites, map[string]any{"name": n, "version_url": gl.URL + "/sites/{site}/{service}{postfix}/version", "agent_id": mock.AgentID(n)})
 	}
 	var services []map[string]any
 	for _, s := range mock.Services {
@@ -266,8 +296,9 @@ func TestEndToEnd(t *testing.T) {
 	settings := map[string]any{"gitlab": map[string]string{"url": gl.URL, "project": "acme/app", "branch": "main"},
 		"poll_seconds": 30, "version_token": "vt", "services": services,
 		"environment_template": "{site}-{service}{postfix}", "trigger_as": "inputs",
+		"kubernetes":      map[string]string{"namespace": "{site}", "selector": "app={service}{postfix}"},
 		"pipeline_inputs": map[string]string{"SITE": "{site}", "SERVICE": "{service}", "POSTFIX": "{postfix}", "DEPLOY_SHA": "{sha}"}}
-	settings["sites"] = append(slices.Clone(sites), map[string]string{"name": "bad name"})
+	settings["sites"] = append(slices.Clone(sites), map[string]any{"name": "bad name"})
 	if code := call("PUT", "/api/settings", "application/json", settings, nil); code != http.StatusBadRequest {
 		t.Errorf("invalid site name: %d, want 400", code)
 	}
@@ -308,8 +339,9 @@ func TestEndToEnd(t *testing.T) {
 		"surabaya/worker-mailer": "BEHIND", "surabaya/worker-sync": "BEHIND", "surabaya/job-backfill": "BEHIND",
 		"medan/api-core": "SCHEMA_PENDING", "medan/api-report": "SCHEMA_PENDING", "medan/job-backfill": "NEVER",
 		"bandung/api-core": "DB_AHEAD", "bandung/api-report": "DB_AHEAD", "bandung/worker-sync": "BEHIND",
-		"makassar/api-core": "DOWN", "makassar/api-report": "DOWN", "makassar/worker-mailer": "BEHIND",
-		"makassar/worker-sync": "BEHIND", "makassar/job-backfill": "NEVER",
+		"makassar/api-core": "DOWN", "makassar/api-report": "DOWN", "makassar/job-backfill": "NEVER",
+		"makassar/worker-mailer": "DOWN", // deployed, but its pods never turn ready
+		"makassar/worker-sync":   "DOWN", // its GitLab environment was stopped
 	})
 	got := cells()
 	if len(got) != len(want) {
@@ -325,6 +357,22 @@ func TestEndToEnd(t *testing.T) {
 	}
 	if c := got["medan/api-core"]; c.Source != "version" || c.Schema == nil || !slices.Equal(c.Schema.Pending, []string{"M20260913120000_job_runs"}) {
 		t.Errorf("medan/api-core = %+v", c)
+	}
+	// workers: pods through the agent, stopped environments, failed deploys
+	if c := got["jakarta/worker-mailer"]; c.Pods == nil || *c.Pods != (Pods{Ready: 2, Total: 2}) {
+		t.Errorf("jakarta/worker-mailer pods = %+v, want 2 of 2 ready", c.Pods)
+	}
+	if c := got["makassar/worker-mailer"]; c.Pods == nil || *c.Pods != (Pods{Ready: 0, Total: 2}) || c.Error != "0 of 2 pods ready" {
+		t.Errorf("makassar/worker-mailer = %+v, pods %+v", c, c.Pods)
+	}
+	if c := got["makassar/worker-sync"]; !strings.Contains(c.Error, "stopped") {
+		t.Errorf("makassar/worker-sync = %+v, want a stopped environment", c)
+	}
+	if c := got["surabaya/worker-mailer"]; c.FailedDeploy == nil || c.FailedDeploy.Status != "failed" || c.FailedDeploy.SHA != snap.Head || c.Behind != 2 {
+		t.Errorf("surabaya/worker-mailer = %+v, want 2 behind with the head's deploy failed", c)
+	}
+	if c := got["jakarta/job-backfill"]; c.Pods != nil {
+		t.Errorf("a job's pods were checked: %+v", c.Pods)
 	}
 
 	// 2. an unchanged fleet records nothing new, and a cell GitLab didn't
@@ -406,6 +454,7 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	// 5. the deployed cells converged, and the tracker kept their history
+	snap = Snapshot{} // decoding into the old cells would keep fields the new JSON omits
 	call("GET", "/api/status?fresh", "", nil, &snap)
 	got = cells()
 	for _, tg := range targets {
@@ -414,8 +463,11 @@ func TestEndToEnd(t *testing.T) {
 			t.Errorf("after deploy %s: %s, want %s", k, got[k].State, w)
 		}
 	}
-	if got["makassar/worker-mailer"].State != "BEHIND" {
+	if got["makassar/worker-mailer"].State != "DOWN" {
 		t.Errorf("an untouched cell changed: %+v", got["makassar/worker-mailer"])
+	}
+	if c := got["surabaya/worker-mailer"]; c.FailedDeploy != nil {
+		t.Errorf("a successful deploy should clear the failed one: %+v", c.FailedDeploy)
 	}
 	history := func(site, svc, postfix string) []SiteVersion {
 		var h []SiteVersion
@@ -434,7 +486,7 @@ func TestEndToEnd(t *testing.T) {
 	// it applies at once. The password change applies to the next sign-in and
 	// omitting version_token keeps the stored one.
 	delete(settings, "version_token")
-	without := slices.DeleteFunc(slices.Clone(sites), func(s map[string]string) bool { return s["name"] == "jakarta" })
+	without := slices.DeleteFunc(slices.Clone(sites), func(s map[string]any) bool { return s["name"] == "jakarta" })
 	settings["sites"] = without // api-core-partner still lists jakarta
 	if code := call("PUT", "/api/settings", "application/json", settings, nil); code != http.StatusBadRequest {
 		t.Errorf("dropping a site a service names: %d, want 400", code)
@@ -445,6 +497,7 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatalf("second save: %d", code)
 	}
 	delete(settings, "password")
+	snap = Snapshot{}
 	call("GET", "/api/status", "", nil, &snap)
 	if len(snap.Sites) != 4 || slices.Contains(snap.Sites, "jakarta") || len(snap.Cells) != 4*5+1 {
 		t.Errorf("after dropping jakarta: %d sites, %d cells", len(snap.Sites), len(snap.Cells))

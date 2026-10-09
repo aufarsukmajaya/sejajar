@@ -55,6 +55,40 @@ An API on a site with no version URL is read from GitLab deployments too.
 APIs often record a different environment (a `-stable` suffix with canaries), so
 there is a separate API environment template.
 
+### Is it actually running?
+
+A deployment record says what was deployed, not whether it still runs. For
+cells read from GitLab (workers, and APIs without a version URL), Resonate
+also checks:
+
+- **Pods**, through the [GitLab agent for Kubernetes](https://docs.gitlab.com/user/clusters/agent/).
+  Give each site the ID of the agent in its cluster (Settings → Sites → Agent ID),
+  and set the pod namespace and label selector templates, e.g. `production` and
+  `app={service}{postfix}`. When none of a cell's pods are ready, its gem falls
+  to the floor. Jobs finish by design and are never checked. No cluster
+  credentials are needed: calls go through GitLab's Kubernetes proxy (KAS) as
+  `pat:<agent id>:<GITLAB_TOKEN>`, so Resonate can run in any cluster. For this:
+  - `GITLAB_TOKEN` needs the `k8s_proxy` scope as well as `api`;
+  - each agent's config (`.gitlab/agents/<agent>/config.yaml`) grants the app
+    project user access, and the token's user must be a Developer or above on it:
+    ```yaml
+    user_access:
+      access_as:
+        agent: {}
+      projects:
+        - id: group/app
+    ```
+  - the proxy is `https://kas.gitlab.com/k8s-proxy` on GitLab.com and
+    `<gitlab>/-/kubernetes-agent/k8s-proxy` when self-managed. Override it in
+    Settings if your KAS lives elsewhere.
+
+  If the agent can't be reached, the cell keeps what its deployment says and
+  the side panel shows the error.
+- **Stopped environments.** A cell whose GitLab environment is stopped is down.
+- **Failed deploys.** When the environment's latest deployment failed or was
+  canceled, the cell still runs the one before it; its gem gets a red dot and
+  the side panel links the failed pipeline.
+
 A **postfix** is a separately deployed variant of a service (`api-core` +
 `-partner` is its own deployment and environment). It is its own row, and it
 can be limited to the sites that run it.
@@ -125,7 +159,7 @@ The terminal commands read the same database:
 ./bin/resonate -services job-backfill -yes deploy        # a job, on every site that runs it
 ```
 
-Container image: `docker build -t resonate .` and pass the two env vars.
+Container image: `docker build -t resonate .` and pass the two env vars. For Kubernetes, edit the `CHANGE ME` lines in `deployment.yaml` and `kubectl apply -f deployment.yaml`.
 
 ## Demo
 
@@ -133,7 +167,12 @@ Container image: `docker build -t resonate .` and pass the two env vars.
 make demo   # own database (resonate_demo), fake GitLab, 5 sites x 6 services, http://127.0.0.1:8090
 curl -X POST localhost:9999/mock/push                  # merge a commit (with a new migration) to main
 curl -X POST localhost:9999/mock/sites/makassar/toggle  # take a site's DB down / bring it back
+curl -X POST localhost:9999/mock/pods/jakarta/worker-sync/toggle  # make a worker's pods crash-loop / recover
 ```
+
+The demo starts with three workers that look fine by deployment alone:
+makassar's `worker-mailer` crash-loops (0 of 2 pods ready), its `worker-sync`
+environment is stopped, and surabaya's `worker-mailer` failed to deploy the head.
 
 The demo has GitLab sign-in on. The fake GitLab's consent page lets you pick a
 user: `dewi` (Maintainer), `budi` (Developer), `tamu` (Reporter: GitLab refuses

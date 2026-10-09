@@ -33,6 +33,9 @@ type settingsTable struct {
 	OAuthClientSecret      postgres.ColumnString
 	UpdatedAt              postgres.ColumnTimestampz
 	UpdatedBy              postgres.ColumnString
+	K8sProxyURL            postgres.ColumnString
+	PodNamespace           postgres.ColumnString
+	PodSelector            postgres.ColumnString
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
@@ -90,9 +93,12 @@ func newSettingsTableImpl(schemaName, tableName, alias string) settingsTable {
 		OAuthClientSecretColumn      = postgres.StringColumn("oauth_client_secret")
 		UpdatedAtColumn              = postgres.TimestampzColumn("updated_at")
 		UpdatedByColumn              = postgres.StringColumn("updated_by")
-		allColumns                   = postgres.ColumnList{IDColumn, GitlabURLColumn, GitlabProjectColumn, GitlabBranchColumn, EnvironmentTemplateColumn, APIEnvironmentTemplateColumn, PipelineInputsColumn, TriggerAsColumn, VersionTokenColumn, PollSecondsColumn, AdminUserColumn, AdminPasswordHashColumn, OAuthClientIDColumn, OAuthClientSecretColumn, UpdatedAtColumn, UpdatedByColumn}
-		mutableColumns               = postgres.ColumnList{GitlabURLColumn, GitlabProjectColumn, GitlabBranchColumn, EnvironmentTemplateColumn, APIEnvironmentTemplateColumn, PipelineInputsColumn, TriggerAsColumn, VersionTokenColumn, PollSecondsColumn, AdminUserColumn, AdminPasswordHashColumn, OAuthClientIDColumn, OAuthClientSecretColumn, UpdatedAtColumn, UpdatedByColumn}
-		defaultColumns               = postgres.ColumnList{IDColumn, GitlabURLColumn, GitlabProjectColumn, GitlabBranchColumn, EnvironmentTemplateColumn, APIEnvironmentTemplateColumn, PipelineInputsColumn, TriggerAsColumn, VersionTokenColumn, PollSecondsColumn, AdminUserColumn, AdminPasswordHashColumn, OAuthClientIDColumn, OAuthClientSecretColumn, UpdatedAtColumn, UpdatedByColumn}
+		K8sProxyURLColumn            = postgres.StringColumn("k8s_proxy_url")
+		PodNamespaceColumn           = postgres.StringColumn("pod_namespace")
+		PodSelectorColumn            = postgres.StringColumn("pod_selector")
+		allColumns                   = postgres.ColumnList{IDColumn, GitlabURLColumn, GitlabProjectColumn, GitlabBranchColumn, EnvironmentTemplateColumn, APIEnvironmentTemplateColumn, PipelineInputsColumn, TriggerAsColumn, VersionTokenColumn, PollSecondsColumn, AdminUserColumn, AdminPasswordHashColumn, OAuthClientIDColumn, OAuthClientSecretColumn, UpdatedAtColumn, UpdatedByColumn, K8sProxyURLColumn, PodNamespaceColumn, PodSelectorColumn}
+		mutableColumns               = postgres.ColumnList{GitlabURLColumn, GitlabProjectColumn, GitlabBranchColumn, EnvironmentTemplateColumn, APIEnvironmentTemplateColumn, PipelineInputsColumn, TriggerAsColumn, VersionTokenColumn, PollSecondsColumn, AdminUserColumn, AdminPasswordHashColumn, OAuthClientIDColumn, OAuthClientSecretColumn, UpdatedAtColumn, UpdatedByColumn, K8sProxyURLColumn, PodNamespaceColumn, PodSelectorColumn}
+		defaultColumns               = postgres.ColumnList{IDColumn, GitlabURLColumn, GitlabProjectColumn, GitlabBranchColumn, EnvironmentTemplateColumn, APIEnvironmentTemplateColumn, PipelineInputsColumn, TriggerAsColumn, VersionTokenColumn, PollSecondsColumn, AdminUserColumn, AdminPasswordHashColumn, OAuthClientIDColumn, OAuthClientSecretColumn, UpdatedAtColumn, UpdatedByColumn, K8sProxyURLColumn, PodNamespaceColumn, PodSelectorColumn}
 	)
 
 	return settingsTable{
@@ -115,6 +121,9 @@ func newSettingsTableImpl(schemaName, tableName, alias string) settingsTable {
 		OAuthClientSecret:      OAuthClientSecretColumn,
 		UpdatedAt:              UpdatedAtColumn,
 		UpdatedBy:              UpdatedByColumn,
+		K8sProxyURL:            K8sProxyURLColumn,
+		PodNamespace:           PodNamespaceColumn,
+		PodSelector:            PodSelectorColumn,
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,

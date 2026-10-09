@@ -72,7 +72,7 @@ env: DATABASE_URL (all commands), GITLAB_TOKEN (serve, status, deploy)`)
 
 	token := os.Getenv("GITLAB_TOKEN")
 	if token == "" {
-		fail(errors.New("GITLAB_TOKEN is not set (needs api scope)"))
+		fail(errors.New("GITLAB_TOKEN is not set (needs api scope, plus k8s_proxy for pod checks)"))
 	}
 	f := &Fleet{store: store, token: token}
 	sites, services := splitList(*onlySites), splitList(*onlyServices)
@@ -189,8 +189,12 @@ func printStatus(ctx context.Context, f *Fleet, sites, services []string) {
 		if c.Schema != nil {
 			db, pending, unknown = c.Schema.DB, fmt.Sprint(len(c.Schema.Pending)), fmt.Sprint(len(c.Schema.Unknown))
 		}
+		note := c.Error
+		if c.FailedDeploy != nil {
+			note = strings.TrimPrefix(note+"; last deploy "+c.FailedDeploy.Status+" ("+short(c.FailedDeploy.SHA)+")", "; ")
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", c.Site, c.Service+c.Postfix, c.Kind, c.State,
-			cmp.Or(short(c.Commit), "-"), behind, c.Source, db, pending, unknown, c.Error)
+			cmp.Or(short(c.Commit), "-"), behind, c.Source, db, pending, unknown, note)
 	}
 	tw.Flush()
 	if bad {

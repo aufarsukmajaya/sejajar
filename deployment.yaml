@@ -1,0 +1,114 @@
+# Resonate on Kubernetes: kubectl apply -f deployment.yaml
+#
+# Change the lines marked CHANGE ME: the image, the two secrets and the host.
+# The database must already exist; Resonate creates its own tables on start.
+# On first start the admin password is printed once:
+#   kubectl -n resonate logs deploy/resonate | grep 'first run'
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: resonate
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: resonate
+  namespace: resonate
+type: Opaque
+stringData:
+  # CHANGE ME: postgres://user:password@host:5432/resonate?sslmode=require
+  DATABASE_URL: postgres://resonate:CHANGE-ME@postgres:5432/resonate?sslmode=disable
+  # CHANGE ME: personal access token with the api scope (+ k8s_proxy for pod checks)
+  GITLAB_TOKEN: glpat-CHANGE-ME
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resonate
+  namespace: resonate
+  labels:
+    app: resonate
+spec:
+  replicas: 1 # every replica polls GitLab on its own; one is enough
+  selector:
+    matchLabels:
+      app: resonate
+  template:
+    metadata:
+      labels:
+        app: resonate
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: resonate
+          image: registry.example.com/resonate:latest # CHANGE ME: push the `make docker` image here
+          args: ["serve"]
+          envFrom:
+            - secretRef:
+                name: resonate
+          ports:
+            - name: http
+              containerPort: 8090
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: resonate
+  namespace: resonate
+spec:
+  selector:
+    app: resonate
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Serve it at the root of its own host; GitLab sign-in redirects to
+# https://<host>/auth/callback (shown in Settings).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: resonate
+  namespace: resonate
+spec:
+  ingressClassName: nginx # CHANGE ME: or traefik
+  rules:
+    - host: resonate.example.com # CHANGE ME
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: resonate
+                port:
+                  name: http
+  tls:
+    - hosts: [resonate.example.com] # CHANGE ME
+      secretName: resonate-tls # CHANGE ME: or let cert-manager create it

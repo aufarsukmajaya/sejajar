@@ -108,6 +108,11 @@ func TestValidate(t *testing.T) {
 		"shared agent, sites not apart":   func(c *Config) { c.Sites[1].AgentID = 1; c.Kubernetes.Namespace = "prod" },
 		"negative agent id":               func(c *Config) { c.Sites[1].AgentID = -2 },
 		"proxy url not http":              func(c *Config) { c.Kubernetes.ProxyURL = "kas.example.com" },
+		"names collide once expanded": func(c *Config) { // a-west + api and a + west-api are both a-west-api
+			c.Sites[0].Name = "a-west"
+			c.Sites = append(c.Sites, Site{Name: "a"})
+			c.Services = append(c.Services, Service{Name: "west-api", Kind: "worker", Sites: []string{"a"}})
+		},
 	}
 	pods := func(c *Config) *Config {
 		c.Sites[0].AgentID, c.Sites[1].AgentID, c.Kubernetes.Namespace = 1, 2, "prod"
@@ -183,8 +188,9 @@ func TestSchemaUpgrade(t *testing.T) {
 		t.Fatalf("upgrade from v1: %v", err)
 	}
 	var inputs string
-	if err := conn.QueryRowContext(ctx, "SELECT pipeline_inputs::text FROM settings").Scan(&inputs); err != nil || !strings.Contains(inputs, "{postfix}") {
-		t.Errorf("settings after upgrade: %q, %v", inputs, err)
+	if err := conn.QueryRowContext(ctx, "SELECT pipeline_inputs::text || ' ' || trigger_as FROM settings").Scan(&inputs); err != nil ||
+		!strings.Contains(inputs, "{postfix}") || !strings.HasSuffix(inputs, " variables") {
+		t.Errorf("settings after upgrade: %q, %v; v1 passed CI variables and must keep doing so", inputs, err)
 	}
 	if _, err := conn.ExecContext(ctx, "INSERT INTO deploys (created_by, branch, sha) VALUES ('t', 'main', 'x'); "+
 		"INSERT INTO deploy_runs (deploy_id, site, service, postfix, pipeline_sha, status) VALUES (1, 's', 'api', '', 'x', 'running'); "+
@@ -214,6 +220,7 @@ func TestEndToEnd(t *testing.T) {
 	if dsn == "" {
 		t.Skip("RESONATE_TEST_DATABASE_URL not set")
 	}
+	runSyncEvery = 0
 	ctx := context.Background()
 	store, err := openStore(ctx, dsn)
 	if err != nil {

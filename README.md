@@ -19,7 +19,8 @@
   watch each GitLab pipeline finish.
 - **Schema tracker**: every change in what a cell runs (commit, state,
   applied/pending/unknown migrations) is stored in Postgres. Open a cell to
-  see its history.
+  see its history. Checks only run while someone has the dashboard open (all
+  open tabs share one check), so the history has gaps when nobody is looking.
 - **CLI** (`status`, `deploy`): the same checks from a terminal. `status` exits 1
   when any cell is not OK, so CI can use it as a gate.
 - **GitLab sign-in**: people sign in with your (self-hosted) GitLab. Their role
@@ -33,7 +34,7 @@ Postgres through [go-jet](https://github.com/go-jet/jet).
 The environment holds only two values: `DATABASE_URL` and `GITLAB_TOKEN` (api scope
 on the app project). Everything else lives in the database and is edited from
 the dashboard's **Settings**: the GitLab URL, project and branch, the sites and
-services, how deploy pipelines are triggered, the poll interval, the version API
+services, how deploy pipelines are triggered, how often to re-check, the version API
 token and GitLab sign-in. Changes apply without a restart.
 
 ```bash

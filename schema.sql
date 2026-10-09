@@ -125,7 +125,9 @@ ALTER TABLE site_versions ADD COLUMN IF NOT EXISTS source                   text
 ALTER TABLE settings      ADD COLUMN IF NOT EXISTS environment_template     text  NOT NULL DEFAULT '{site}-{service}{postfix}';
 ALTER TABLE settings      ADD COLUMN IF NOT EXISTS api_environment_template text  NOT NULL DEFAULT '';
 ALTER TABLE settings      ADD COLUMN IF NOT EXISTS pipeline_inputs          jsonb NOT NULL DEFAULT '{"SITE": "{site}", "SERVICE": "{service}", "POSTFIX": "{postfix}", "DEPLOY_SHA": "{sha}"}';
-ALTER TABLE settings      ADD COLUMN IF NOT EXISTS trigger_as               text  NOT NULL DEFAULT 'inputs' CHECK (trigger_as IN ('inputs', 'variables'));
+-- Installs from before trigger_as passed CI variables; keep doing so, new ones default to inputs.
+ALTER TABLE settings      ADD COLUMN IF NOT EXISTS trigger_as               text  NOT NULL DEFAULT 'variables' CHECK (trigger_as IN ('inputs', 'variables'));
+ALTER TABLE settings      ALTER COLUMN trigger_as SET DEFAULT 'inputs';
 ALTER TABLE settings      ADD COLUMN IF NOT EXISTS oauth_client_id          text  NOT NULL DEFAULT '';
 ALTER TABLE settings      ADD COLUMN IF NOT EXISTS oauth_client_secret      text  NOT NULL DEFAULT '';
 ALTER TABLE settings      ADD COLUMN IF NOT EXISTS k8s_proxy_url            text  NOT NULL DEFAULT '';

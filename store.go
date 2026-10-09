@@ -171,18 +171,9 @@ type cellKey struct{ site, service, postfix string }
 // RecordSnapshot appends a site_versions row for every cell whose state,
 // commit or schema differs from its last recorded row. Returns rows written.
 func (s *Store) RecordSnapshot(ctx context.Context, snap *Snapshot) (int, error) {
-	var last []model.SiteVersions
-	err := pg.SELECT(table.SiteVersions.AllColumns).
-		DISTINCT(table.SiteVersions.Site, table.SiteVersions.Service, table.SiteVersions.Postfix).
-		FROM(table.SiteVersions).
-		ORDER_BY(table.SiteVersions.Site.ASC(), table.SiteVersions.Service.ASC(), table.SiteVersions.Postfix.ASC(), table.SiteVersions.ObservedAt.DESC()).
-		QueryContext(ctx, s.db, &last)
+	prev, err := s.lastVersions(ctx, snap.Cells)
 	if err != nil {
 		return 0, err
-	}
-	prev := map[cellKey]model.SiteVersions{}
-	for _, l := range last {
-		prev[cellKey{l.Site, l.Service, l.Postfix}] = l
 	}
 
 	var changed []model.SiteVersions
@@ -213,6 +204,57 @@ func (s *Store) RecordSnapshot(ctx context.Context, snap *Snapshot) (int, error)
 		MODELS(changed).
 		ExecContext(ctx, s.db)
 	return len(changed), err
+}
+
+// lastVersions is each cell's latest tracker row: one index lookup per cell
+// on site_versions_cell_observed_idx, however long the history grows.
+func (s *Store) lastVersions(ctx context.Context, cells []Cell) (map[cellKey]model.SiteVersions, error) {
+	sites, services, postfixes := make([]string, len(cells)), make([]string, len(cells)), make([]string, len(cells))
+	for i, c := range cells {
+		sites[i], services[i], postfixes[i] = c.Site, c.Service, c.Postfix
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT v.site, v.service, v.postfix, v.state, v.source, v.commit_sha, v.schema_code, v.schema_db, v.pending, v.unknown
+		FROM unnest($1::text[], $2::text[], $3::text[]) AS c (site, service, postfix)
+		CROSS JOIN LATERAL (
+			SELECT * FROM site_versions s
+			WHERE s.site = c.site AND s.service = c.service AND s.postfix = c.postfix
+			ORDER BY s.observed_at DESC LIMIT 1
+		) v`, sites, services, postfixes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[cellKey]model.SiteVersions{}
+	for rows.Next() {
+		var v model.SiteVersions
+		if err := rows.Scan(&v.Site, &v.Service, &v.Postfix, &v.State, &v.Source, &v.CommitSha, &v.SchemaCode, &v.SchemaDb, &v.Pending, &v.Unknown); err != nil {
+			return nil, err
+		}
+		out[cellKey{v.Site, v.Service, v.Postfix}] = v
+	}
+	return out, rows.Err()
+}
+
+// PinnedSHAs maps each pipeline Resonate started to the commit it pinned,
+// where that differs from the branch commit the pipeline ran on (main moved
+// during the fan-out). GitLab records the latter on the deployment.
+func (s *Store) PinnedSHAs(ctx context.Context) (map[int64]string, error) {
+	var rows []struct {
+		model.DeployRuns
+		model.Deploys
+	}
+	err := pg.SELECT(table.DeployRuns.PipelineID, table.Deploys.Sha).
+		FROM(table.DeployRuns.INNER_JOIN(table.Deploys, table.Deploys.ID.EQ(table.DeployRuns.DeployID))).
+		WHERE(table.DeployRuns.PipelineID.IS_NOT_NULL().
+			AND(table.DeployRuns.PipelineSha.NOT_EQ(pg.String(""))).
+			AND(table.DeployRuns.PipelineSha.NOT_EQ(table.Deploys.Sha))).
+		QueryContext(ctx, s.db, &rows)
+	out := map[int64]string{}
+	for _, r := range rows {
+		out[*r.PipelineID] = r.Sha
+	}
+	return out, err
 }
 
 // ListSiteVersions returns one cell's tracker rows, newest first.

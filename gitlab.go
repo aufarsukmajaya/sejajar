@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -91,6 +92,7 @@ type deployment struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 	Deployable struct {
 		Pipeline struct {
+			ID     int64  `json:"id"`
 			WebURL string `json:"web_url"`
 		} `json:"pipeline"`
 	} `json:"deployable"`
@@ -124,15 +126,20 @@ func (g gitlab) running(ctx context.Context, env string) (ok, failed *deployment
 	return ok, failed, err
 }
 
-// stoppedEnvironments names the project's stopped environments: their pods
-// were torn down.
-func (g gitlab) stoppedEnvironments(ctx context.Context) (map[string]bool, error) {
+// stoppedEnvironments names the project's stopped environments whose name
+// starts with prefix: their pods were torn down.
+func (g gitlab) stoppedEnvironments(ctx context.Context, prefix string) (map[string]bool, error) {
 	out := map[string]bool{}
+	q := url.Values{"states": {"stopped"}, "per_page": {"100"}}
+	if len(prefix) >= 3 { // GitLab ignores shorter searches
+		q.Set("search", prefix)
+	}
 	for page := 1; ; page++ {
 		var envs []struct {
 			Name string `json:"name"`
 		}
-		if err := g.do(ctx, http.MethodGet, fmt.Sprintf("/environments?states=stopped&per_page=100&page=%d", page), nil, &envs); err != nil {
+		q.Set("page", strconv.Itoa(page))
+		if err := g.do(ctx, http.MethodGet, "/environments?"+q.Encode(), nil, &envs); err != nil {
 			return nil, err
 		}
 		for _, e := range envs {

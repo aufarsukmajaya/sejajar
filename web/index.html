@@ -496,7 +496,7 @@ label > .info { grid-area: 1 / 2; justify-self: start; }
           <label>URL <input type="url" name="url" placeholder="https://gitlab.example.com"><button type="button" class="info" data-tip="The address of your GitLab, the one you open in the browser.&#10;Example: https://gitlab.example.com"></button></label>
           <label>Project (path or id) <input type="text" name="project" placeholder="group/app"><button type="button" class="info" data-tip="Which repository holds the app: the part of its address after the GitLab URL (group/app), or the Project ID shown on the project page."></button></label>
           <label>Branch <input type="text" name="branch" placeholder="main"><button type="button" class="info" data-tip="The branch every site should be running, usually main. A cell is “behind” when it runs an older commit than this branch’s latest."></button></label>
-          <label>Poll every (seconds) <input type="number" name="poll" min="10" required><button type="button" class="info" data-tip="How often Resonate re-checks every site and GitLab. Lower means a fresher dashboard but more requests. 60 is a good start; 10 is the minimum."></button></label>
+          <label>Re-check after (seconds) <input type="number" name="poll" min="10" required><button type="button" class="info" data-tip="How old a check may be before an open dashboard asks for a new one. Every open dashboard shares one check, and nothing is checked while nobody has it open. Lower means fresher but more GitLab requests. 60 is a good start; 10 is the minimum."></button></label>
         </div>
       </fieldset>
       <fieldset>
@@ -851,7 +851,7 @@ function showApp(res) {
   loadStatus();
   loadDeploys();
   clearInterval(statusTimer);
-  statusTimer = setInterval(() => loadStatus(), 30000);
+  statusTimer = setInterval(() => document.hidden || loadStatus(), 30000);
 }
 
 function skeleton() {
@@ -1112,8 +1112,12 @@ gemSwitch();
 $("select-stale").onclick = () => { snap?.cells.forEach((c) => stale(c) && selected.add(cellKey(c))); if (snap) render(); };
 $("select-none").onclick = () => { selected.clear(); if (snap) render(); };
 $("refresh").onclick = () => { loadStatus(true); loadDeploys(); };
+// A hidden tab asks nothing, so nobody looking means no GitLab calls; catch up when shown.
+document.addEventListener("visibilitychange", () => { if (!document.hidden && me) { loadStatus(); loadDeploys(); } });
 
 // ---------- deploy ----------
+// What the dialog showed: a status refresh while it is open must not change what gets deployed.
+let confirmed = null;
 $("deploy").onclick = () => {
   const cells = byKey();
   const picked = [...selected].map((k) => cells.get(k)).filter(Boolean);
@@ -1131,19 +1135,19 @@ $("deploy").onclick = () => {
       ". A DB-ahead API was migrated by a newer build; a down API's deploy will likely fail, a down worker's may bring it back.") : null,
     jobs.length ? h("div", { class: "warnbox" }, `${jobs.length} job${jobs.length > 1 ? "s" : ""} selected: a job runs once when deployed.`) : null,
   ].filter(Boolean));
+  confirmed = { sha: snap.head, targets: picked.map((c) => ({ site: c.site, service: c.service, postfix: c.postfix || "" })) };
   $("confirm").returnValue = "";
   $("confirm").showModal();
 };
 
 $("confirm").addEventListener("close", async () => {
   if ($("confirm").returnValue !== "ok") return;
-  const cells = byKey();
-  const targets = [...selected].map((k) => cells.get(k)).filter(Boolean).map((c) => ({ site: c.site, service: c.service, postfix: c.postfix || "" }));
+  const { sha, targets } = confirmed;
   try {
     const res = await api("/api/deploys", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ targets, sha: snap.head }),
+      body: JSON.stringify({ targets, sha }),
     });
     const refused = res.deploy.runs.filter((r) => r.status === "error").length;
     toast(res.warning || (refused ? `${refused} of ${res.deploy.runs.length} pipeline(s) refused by GitLab` : `Triggered ${res.deploy.runs.length} pipeline(s)`));
@@ -1159,7 +1163,7 @@ $("confirm").addEventListener("close", async () => {
 
 async function loadDeploys() {
   clearTimeout(deployTimer);
-  if (!me) return;
+  if (!me || document.hidden) return; // picked up again when the tab is shown
   let busy = false;
   try {
     const list = await api("/api/deploys");

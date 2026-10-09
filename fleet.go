@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"net/http"
 	"net/url"
@@ -96,6 +97,33 @@ func (c *Config) k8sProxy() string {
 		return "https://kas.gitlab.com/k8s-proxy"
 	}
 	return strings.TrimRight(c.GitLab.URL, "/") + "/-/kubernetes-agent/k8s-proxy"
+}
+
+// pinsSHA reports whether deploy pipelines are told which commit to roll out
+// ({sha}), so the image can differ from the commit the pipeline ran on.
+func (c *Config) pinsSHA() bool {
+	return slices.ContainsFunc(slices.Collect(maps.Values(c.PipelineInputs)), func(v string) bool { return strings.Contains(v, "{sha}") })
+}
+
+// environmentSearch is the literal start every environment name shares, so
+// listing stopped environments can skip the rest (review apps and such).
+func (c *Config) environmentSearch() string {
+	p := c.EnvironmentTemplate
+	if c.APIEnvironmentTemplate != "" {
+		p = commonPrefix(p, c.APIEnvironmentTemplate)
+	}
+	if i := strings.IndexByte(p, '{'); i >= 0 {
+		p = p[:i]
+	}
+	return p
+}
+
+func commonPrefix(a, b string) string {
+	n := 0
+	for n < len(a) && n < len(b) && a[n] == b[n] {
+		n++
+	}
+	return a[:n]
 }
 
 func (c *Config) environment(site string, svc Service) string {
@@ -285,6 +313,40 @@ func (c *Config) validateTemplates() error {
 			return fmt.Errorf("site %s: version url must contain {postfix}: a postfixed API is its own deployment", site.Name)
 		}
 	}
+	return c.distinctNames()
+}
+
+// distinctNames checks the expanded names, not only their placeholders: names
+// may contain '-', so site "eu-west" + service "api" and site "eu" + service
+// "west-api" both expand "{site}-{service}" to "eu-west-api".
+func (c *Config) distinctNames() error {
+	seen := map[string]string{} // kind + name -> the cell using it
+	use := func(kind, name, cell string) error {
+		if other, ok := seen[kind+"\x00"+name]; ok {
+			return fmt.Errorf("%s and %s would share the %s %q", other, cell, kind, name)
+		}
+		seen[kind+"\x00"+name] = cell
+		return nil
+	}
+	for _, t := range c.cells() {
+		site, svc, cell := t.site.Name, t.svc, t.site.Name+" "+t.svc.ID()
+		var inputs []string
+		for k, v := range c.PipelineInputs {
+			inputs = append(inputs, k+"="+expand(v, site, svc))
+		}
+		slices.Sort(inputs)
+		errs := []error{use("GitLab environment", c.environment(site, svc), cell), use("pipeline inputs", strings.Join(inputs, " "), cell)}
+		if t.site.AgentID > 0 && svc.Kind != "job" {
+			pods := fmt.Sprintf("agent %d: %s -l %s", t.site.AgentID, expand(c.Kubernetes.Namespace, site, svc), expand(c.Kubernetes.Selector, site, svc))
+			errs = append(errs, use("pods", pods, cell))
+		}
+		if svc.Kind == "api" && t.site.VersionURL != "" {
+			errs = append(errs, use("version url", expand(t.site.VersionURL, site, svc), cell))
+		}
+		if err := errors.Join(errs...); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -405,11 +467,6 @@ func (c *Config) cells() []target {
 	return out
 }
 
-func (f *Fleet) Snapshot(ctx context.Context) (*Snapshot, error) {
-	snap, _, err := f.snapshot(ctx)
-	return snap, err
-}
-
 // snapshot also returns the config it was taken with.
 func (f *Fleet) snapshot(ctx context.Context) (*Snapshot, *Config, error) {
 	cfg, gl, err := f.load(ctx)
@@ -420,14 +477,21 @@ func (f *Fleet) snapshot(ctx context.Context) (*Snapshot, *Config, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("read %s head: %w", cfg.GitLab.Branch, err)
 	}
-	stopped, err := gl.stoppedEnvironments(ctx)
+	stopped, err := gl.stoppedEnvironments(ctx, cfg.environmentSearch())
 	if err != nil {
-		stopped = nil // can't tell: judge cells by their deployments and pods alone
+		log.Printf("stopped environments: %v", err) // judge cells by their deployments and pods alone
+	}
+	var pinned map[int64]string
+	if cfg.pinsSHA() {
+		if pinned, err = f.store.PinnedSHAs(ctx); err != nil {
+			log.Printf("pinned deploys: %v", err)
+		}
 	}
 	refs := cfg.cells()
 	out := make([]Cell, len(refs))
-	behind := &behindCache{ctx: ctx, gl: gl, head: head, m: map[string]*behindEntry{}}
-	eachLimited(len(refs), func(i int) { out[i] = check(ctx, gl, cfg, refs[i], head, behind, stopped) })
+	sw := sweep{gl: gl, cfg: cfg, head: head, stopped: stopped, pinned: pinned,
+		behind: &behindCache{ctx: ctx, gl: gl, head: head, m: map[string]*behindEntry{}}}
+	eachLimited(len(refs), func(i int) { out[i] = sw.check(ctx, refs[i]) })
 
 	snap := &Snapshot{Branch: cfg.GitLab.Branch, Head: head, CheckedAt: time.Now().UTC(), Services: cfg.Services, Cells: out}
 	for _, s := range cfg.Sites {
@@ -436,10 +500,21 @@ func (f *Fleet) snapshot(ctx context.Context) (*Snapshot, *Config, error) {
 	return snap, cfg, nil
 }
 
+// sweep is what every cell's check shares within one snapshot.
+type sweep struct {
+	gl      gitlab
+	cfg     *Config
+	head    string
+	behind  *behindCache
+	stopped map[string]bool  // nil: couldn't tell
+	pinned  map[int64]string // pipeline id -> the commit Resonate pinned it to, when that differs from its branch commit
+}
+
 // check reads what one cell runs: live from an API's /version, otherwise from
 // the GitLab environment's last successful deployment. A cell read from GitLab
 // is down when its environment was stopped or none of its pods are ready.
-func check(ctx context.Context, gl gitlab, cfg *Config, t target, head string, behind *behindCache, stopped map[string]bool) Cell {
+func (sw sweep) check(ctx context.Context, t target) Cell {
+	gl, cfg, head, behind, stopped := sw.gl, sw.cfg, sw.head, sw.behind, sw.stopped
 	c := Cell{Site: t.site.Name, Service: t.svc.Name, Postfix: t.svc.Postfix, Kind: t.svc.Kind, Behind: -1}
 	if t.svc.Kind == "api" && t.site.VersionURL != "" {
 		c.Source = "version"
@@ -465,6 +540,9 @@ func check(ctx context.Context, gl gitlab, cfg *Config, t target, head string, b
 			return c
 		}
 		c.Commit, c.DeployedAt, c.PipelineURL = d.SHA, &d.UpdatedAt, d.Deployable.Pipeline.WebURL
+		if sha, ok := sw.pinned[d.Deployable.Pipeline.ID]; ok {
+			c.Commit = sha // GitLab records the branch commit; the job rolled out the pinned image
+		}
 		c.State = classify(head, &Version{Commit: d.SHA})
 		switch {
 		case stopped[env]:

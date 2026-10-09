@@ -24,21 +24,29 @@ type server struct {
 	store     *Store
 	refreshMu sync.Mutex
 
-	// The last snapshot, shared by the poll loop and every open dashboard:
-	// a sweep is hundreds of calls, so N tabs must not cost N sweeps.
-	// snapMu serialises sweeps; a settings save bumps configGen, which
-	// invalidates the cached one.
+	// The last snapshot, shared by every open dashboard: a sweep is hundreds
+	// of calls, so N tabs must not cost N sweeps. There is no background
+	// sweep: nobody looking means no calls. snapMu serialises sweeps; a
+	// settings save bumps configGen, which invalidates the cached one.
 	snapMu    sync.Mutex
 	snap      *Snapshot
 	snapAt    time.Time
+	snapTTL   time.Duration
 	snapGen   int64
 	configGen atomic.Int64
+
+	// Deploy history is polled by every open tab while a deploy runs; one
+	// GitLab sync per runSyncEvery serves them all.
+	syncMu sync.Mutex
+	syncAt time.Time
 }
 
-const (
-	snapshotTTL     = 10 * time.Second
-	snapshotTimeout = 90 * time.Second
-)
+// snapshotTimeout only stops a sweep that hangs; each GitLab, /version and
+// pod call has its own short timeout.
+const snapshotTimeout = 5 * time.Minute
+
+// runSyncEvery is a var so tests can sync on every request.
+var runSyncEvery = 2 * time.Second
 
 func newServer(f *Fleet) *server { return &server{fleet: f, store: f.store} }
 
@@ -65,25 +73,35 @@ func (s *server) routes() http.Handler {
 	return mux
 }
 
-// observe returns a snapshot at most snapshotTTL old (fresh forces a new
+// observe returns a snapshot at most poll_seconds old (fresh forces a new
 // one) and records every cell whose version changed.
 func (s *server) observe(ctx context.Context, fresh bool) (*Snapshot, error) {
+	asked := time.Now()
 	s.snapMu.Lock()
 	defer s.snapMu.Unlock()
 	gen := s.configGen.Load()
-	if !fresh && s.snap != nil && s.snapGen == gen && time.Since(s.snapAt) < snapshotTTL {
-		return s.snap, nil
+	if s.snap != nil && s.snapGen == gen {
+		// A sweep that finished while this caller waited is as fresh as any.
+		if s.snapAt.After(asked) || !fresh && time.Since(s.snapAt) < s.snapTTL {
+			return s.snap, nil
+		}
 	}
-	// The result is shared, so one caller going away must not abort it; it
-	// is bounded instead.
+	// The result is shared, so one caller going away must not abort it.
 	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), snapshotTimeout)
 	defer cancel()
-	snap, err := s.fleet.Snapshot(sctx)
+	snap, cfg, err := s.fleet.snapshot(sctx)
+	if err == nil && sctx.Err() != nil {
+		// Cells checked after the deadline failed for that reason alone;
+		// don't serve or record them as outages.
+		err = fmt.Errorf("checking the fleet took over %s", snapshotTimeout)
+	}
 	if err != nil {
 		return nil, err
 	}
-	s.snap, s.snapAt, s.snapGen = snap, time.Now(), gen
-	if n, err := s.store.RecordSnapshot(sctx, snap); err != nil {
+	s.snap, s.snapAt, s.snapTTL, s.snapGen = snap, time.Now(), time.Duration(cfg.PollSeconds)*time.Second, gen
+	rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer rcancel()
+	if n, err := s.store.RecordSnapshot(rctx, snap); err != nil {
 		log.Printf("record snapshot: %v", err)
 	} else if n > 0 {
 		log.Printf("recorded %d version change(s)", n)
@@ -105,15 +123,25 @@ func (s *server) status(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) listDeploys(w http.ResponseWriter, r *http.Request) {
-	if err := s.fleet.SyncRuns(r.Context()); err != nil {
-		log.Printf("sync runs: %v", err)
-	}
+	s.syncRuns(r.Context())
 	list, err := s.store.ListDeploys(r.Context(), 30)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, list)
+}
+
+func (s *server) syncRuns(ctx context.Context) {
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+	if time.Since(s.syncAt) < runSyncEvery {
+		return
+	}
+	if err := s.fleet.SyncRuns(context.WithoutCancel(ctx)); err != nil {
+		log.Printf("sync runs: %v", err)
+	}
+	s.syncAt = time.Now()
 }
 
 // readJSON decodes a write request's body. Requiring a JSON content type
@@ -245,26 +273,6 @@ func (s *server) putSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("settings saved by %s: %d site(s)", by, len(req.Sites))
 	s.getSettings(w, r)
-}
-
-// poll records site versions in the background so the tracker keeps its
-// history when nobody has the dashboard open.
-// The interval is re-read every round, so a change in Settings applies on the next tick.
-func (s *server) poll(ctx context.Context) {
-	for {
-		if _, err := s.observe(ctx, true); err != nil && !errors.Is(err, ErrNotConfigured) {
-			log.Printf("poll: %v", err)
-		}
-		every := time.Minute
-		if cfg, err := s.store.GetConfig(ctx); err == nil && cfg.PollSeconds > 0 {
-			every = time.Duration(cfg.PollSeconds) * time.Second
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(every):
-		}
-	}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

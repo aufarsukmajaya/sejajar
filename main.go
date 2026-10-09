@@ -101,7 +101,6 @@ func runServer(ctx context.Context, f *Fleet, addr string) {
 	}
 
 	s := newServer(f)
-	go s.poll(ctx)
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -166,8 +165,14 @@ func printStatus(ctx context.Context, f *Fleet, sites, services []string) {
 	if err != nil {
 		fail(err)
 	}
-	if _, err := cfg.targetsFor(sites, services); err != nil {
+	// The cells that gate are the ones deploy would take: jobs only when named.
+	targets, err := cfg.targetsFor(sites, services)
+	if err != nil {
 		fail(err)
+	}
+	gate := map[Target]bool{}
+	for _, t := range targets {
+		gate[t] = true
 	}
 
 	fmt.Printf("%s head: %s\n\n", snap.Branch, short(snap.Head))
@@ -178,8 +183,7 @@ func printStatus(ctx context.Context, f *Fleet, sites, services []string) {
 		if len(sites) > 0 && !slices.Contains(sites, c.Site) || len(services) > 0 && !slices.Contains(services, c.Service+c.Postfix) {
 			continue
 		}
-		// Jobs are one-off, like in deploy: they only gate when named.
-		if c.Kind != "job" || slices.Contains(services, c.Service+c.Postfix) {
+		if gate[Target{c.Site, c.Service, c.Postfix}] {
 			bad = bad || c.State != "OK"
 		}
 		behind, db, pending, unknown := "?", "-", "-", "-"

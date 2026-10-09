@@ -4,15 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>Sejajar</title>
+<title>Resonate</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%2307070a'/%3E%3Cpath d='M7 11h18M7 16h18M7 21h18' stroke='%23d4af37' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
 @font-face { font-family: "Cormorant Garamond"; src: url(fonts/cormorant-garamond-normal.woff2) format("woff2"); font-weight: 400 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Press Start 2P"; src: url(fonts/press-start-2p.woff2) format("woff2"); font-display: swap; }
 @font-face { font-family: "Cormorant Garamond"; src: url(fonts/cormorant-garamond-italic.woff2) format("woff2"); font-weight: 400 700; font-style: italic; font-display: swap; }
 
 :root {
   --bg: #07070a;
   --panel: rgb(18 16 13 / .72);
+  --panel-solid: #100e0c;
   --raise: rgb(255 240 200 / .035);
   --line: rgb(212 175 55 / .14);
   --line-strong: rgb(212 175 55 / .32);
@@ -34,7 +36,7 @@
   --shadow: 0 1px 0 rgb(255 236 179 / .05) inset, 0 24px 60px -24px rgb(0 0 0 / .85), 0 0 0 1px var(--line);
 }
 * { box-sizing: border-box; }
-html { background: var(--bg); color-scheme: dark; scrollbar-color: rgb(212 175 55 / .3) transparent; }
+html { background: var(--bg); color-scheme: dark; }
 * { scrollbar-width: thin; scrollbar-color: rgb(212 175 55 / .3) transparent; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: rgb(212 175 55 / .3); border-radius: 8px; }
@@ -86,7 +88,7 @@ body.busy #busy { opacity: 1; }
 /* ---------- shell ---------- */
 #app { position: relative; z-index: 1; opacity: 0; transition: opacity 1s var(--ease); }
 #app.shown { opacity: 1; }
-header { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center; padding: 18px clamp(16px, 4vw, 40px);
+header { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center; padding: 16px clamp(16px, 4vw, 40px);
   background: linear-gradient(180deg, rgb(7 7 10 / .92), rgb(7 7 10 / .68)); backdrop-filter: blur(16px); border-bottom: 1px solid var(--line); }
 header .wordmark { font-size: 24px; letter-spacing: .26em; }
 .meta { display: flex; gap: 22px; flex-wrap: wrap; color: var(--muted); font-size: 12.5px; }
@@ -100,38 +102,176 @@ header .wordmark { font-size: 24px; letter-spacing: .26em; }
 .me .who { display: grid; line-height: 1.15; font-size: 12.5px; }
 .me .who small { color: var(--muted); font-size: 11px; }
 
-main { max-width: 1240px; margin: 0 auto; padding: 32px clamp(16px, 4vw, 40px) 72px; display: grid; gap: 26px; }
+main { padding: 28px clamp(16px, 4vw, 40px) 72px; display: grid; gap: 22px; }
 #app.shown .reveal { animation: rise .9s var(--ease) both; animation-delay: calc(var(--i, 0) * 90ms + 150ms); }
 @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.995); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
 
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
-.card { position: relative; overflow: hidden; border-radius: var(--r-lg); padding: 18px 20px 16px; background: var(--panel); box-shadow: var(--shadow); backdrop-filter: blur(10px);
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.card { position: relative; overflow: hidden; border-radius: var(--r-lg); padding: 16px 18px 14px; background: var(--panel); box-shadow: var(--shadow); backdrop-filter: blur(10px);
   transition: transform .5s var(--ease), box-shadow .5s var(--ease); }
 .card:hover { transform: translateY(-3px); box-shadow: var(--shadow), 0 18px 50px -20px rgb(212 175 55 / .28); }
 .card::after { content: ""; position: absolute; inset: 0 0 auto; height: 1px; background: linear-gradient(90deg, transparent, var(--line-strong), transparent); }
-.card .n { font-family: var(--serif); font-size: 46px; line-height: 1; font-weight: 500; margin-bottom: 10px; font-variant-numeric: lining-nums tabular-nums; }
+.card .n { font-family: var(--serif); font-size: 42px; line-height: 1; font-weight: 500; margin-bottom: 10px; font-variant-numeric: lining-nums tabular-nums; }
 .card[data-state=OK] .n { background: var(--gold-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
 
 section.panel { border-radius: var(--r-lg); background: var(--panel); box-shadow: var(--shadow); backdrop-filter: blur(10px); overflow: hidden; }
-.bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); }
 .bar h2 { font-family: var(--serif); font-weight: 500; font-size: 24px; margin: 0 10px 0 0; letter-spacing: .02em; }
-.scroll { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: 13px 14px; white-space: nowrap; vertical-align: top; }
-th { font-size: 10.5px; color: var(--faint); font-weight: 600; text-transform: uppercase; letter-spacing: .16em; border-bottom: 1px solid var(--line); }
-tbody tr { border-bottom: 1px solid rgb(212 175 55 / .07); transition: background .4s var(--ease); }
-tbody tr:last-child { border-bottom: 0; }
-tbody tr:hover { background: linear-gradient(90deg, rgb(212 175 55 / .06), transparent 70%); }
-tbody.fresh tr { animation: rise .7s var(--ease) both; animation-delay: calc(var(--i, 0) * 45ms); }
-.detail { white-space: normal; overflow-wrap: anywhere; color: var(--muted); font-size: 12.5px; min-width: 200px; max-width: 360px; }
+.bar input[type=search] { width: 200px; }
 .empty { padding: 26px 20px; color: var(--muted); font-family: var(--serif); font-style: italic; font-size: 17px; white-space: normal; }
 
-.badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; border: 1px solid color-mix(in srgb, currentColor 28%, transparent); }
+/* ---------- matrix ---------- */
+.fleet { display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+.fleet:has(> .inspector[hidden]) { grid-template-columns: minmax(0, 1fr); }
+.inspector[hidden] { display: none; }
+.matrix-wrap { overflow: auto; max-height: min(72vh, 900px); }
+table.matrix { border-collapse: separate; border-spacing: 0; min-width: 100%; }
+.matrix th, .matrix td { padding: 0; }
+.matrix thead th { position: sticky; top: 0; z-index: 2; background: var(--panel-solid); border-bottom: 1px solid var(--line); }
+.matrix th.corner, .matrix th.svc { width: 1%; white-space: nowrap; position: sticky; left: 0; z-index: 1; background: var(--panel-solid); border-right: 1px solid var(--line); text-align: left; }
+.matrix th.corner { z-index: 3; padding: 10px 16px; font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .16em; vertical-align: bottom; }
+.colhead { all: unset; box-sizing: border-box; display: grid; gap: 4px; justify-items: center; width: 100%; padding: 10px 8px 9px; cursor: pointer; border-radius: 0; transition: background .3s; }
+.colhead:hover { background: rgb(212 175 55 / .07); }
+.colhead b { font-family: var(--serif); font-size: 17px; font-weight: 600; letter-spacing: .02em; }
+.colhead .dots { display: flex; gap: 3px; }
+.colhead .dots i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.rowhead { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 16px; min-height: 52px; cursor: pointer; transition: background .3s; }
+.rowhead:hover { background: rgb(212 175 55 / .07); }
+.rowhead .nm { font-weight: 600; white-space: nowrap; }
+.rowhead .pf { font-family: var(--serif); font-style: italic; color: var(--gold-hi); font-size: 15px; }
+.kind { font-size: 9.5px; text-transform: uppercase; letter-spacing: .14em; color: var(--faint); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; margin-left: auto; }
+tr.group th { position: sticky; left: 0; text-align: left; padding: 14px 16px 6px; font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 16px; color: var(--gold-hi); background: none; }
+.matrix tbody td { border-bottom: 1px solid rgb(212 175 55 / .06); }
+.matrix td.na { text-align: center; color: var(--faint); }
+.cellbtn { all: unset; box-sizing: border-box; position: relative; display: grid; gap: 1px; justify-items: center; min-width: 96px; width: 100%; padding: 8px 8px 7px; cursor: pointer;
+  border-left: 2px solid transparent; transition: background .3s var(--ease), box-shadow .3s var(--ease); }
+.cellbtn:hover { background: rgb(255 240 200 / .04); }
+.cellbtn .st { font-size: 10.5px; font-weight: 600; letter-spacing: .04em; }
+.cellbtn.focus { background: rgb(212 175 55 / .07); }
+.cellbtn.sel { box-shadow: inset 0 0 0 1.5px var(--gold), inset 0 0 22px rgb(212 175 55 / .16); }
+.cellbtn.sel::after { content: ""; position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--gold-grad); box-shadow: 0 0 8px var(--gold); }
+
+/* ---------- range: sites are mountains, services are gems, in three styles ---------- */
+.matrix-wrap { position: relative; }
+.range { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; }
+.range > * { position: absolute; left: 0; top: 0; }
+table.matrix { position: relative; z-index: 1; }
+.cellbtn .st { color: var(--muted); }
+.cellbtn.m-ok .st { color: var(--ink); }
+.cellbtn.m-drift .st, .cellbtn.m-pending .st { color: var(--warn); }
+.cellbtn.m-ahead .st, .cellbtn.m-down .st { color: var(--bad); }
+.seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line-strong); border-radius: 999px; }
+.seg button { border: 0; padding: 5px 12px; font-size: 12px; background: none; }
+.seg button[aria-pressed=true] { background: var(--gold-grad); color: #1a1408; font-weight: 600; }
+
+.gem { position: relative; width: 46px; height: 42px; display: grid; place-items: center; color: var(--faint); }
+.gem i { display: block; font-style: normal; }
+.gem.m-drift { transform-origin: 50% 90%; animation: sway 2.4s ease-in-out infinite alternate, flicker 2.1s linear infinite; }
+.gem.m-unknown { opacity: .4; filter: blur(.6px) grayscale(1); }
+.gem.x-failed::after { content: ""; position: absolute; z-index: 2; right: 3px; top: 3px; width: 8px; height: 8px; border-radius: 50%; background: var(--bad); box-shadow: 0 0 8px var(--bad); animation: throb 1.2s ease-in-out infinite; }
+[data-gems=pixel] .gem.x-failed::after { border-radius: 0; box-shadow: none; background: #ff5a4a; animation-timing-function: steps(1); }
+[data-gems=ink] .gem.x-failed::after { background: #b8322a; box-shadow: none; }
+@keyframes buzz { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(1.2px, -.9px); } 50% { transform: translate(-1px, 1px); } 75% { transform: translate(.9px, 1.1px); } }
+@keyframes sway { from { transform: rotate(-10deg); } to { transform: rotate(10deg); } }
+@keyframes flicker { 0%, 100% { opacity: .9; } 6% { opacity: .2; } 9% { opacity: .85; } 44% { opacity: .95; } 47% { opacity: .3; } 50% { opacity: .8; } 52% { opacity: .25; } 55% { opacity: .9; } }
+@keyframes throb { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+/* pixel: a 16x13 sprite with eight spin frames */
+.g-pixel .px { position: relative; width: 48px; height: 39px; }
+.g-pixel .win { width: 48px; height: 39px; overflow: hidden; }
+.g-pixel .strip { width: 384px; height: 39px; image-rendering: pixelated; background-size: 384px 39px; animation: frames calc(.72s * var(--spin-k)) steps(8) infinite; }
+.g-pixel .spk { position: absolute; width: 3px; height: 3px; background: #fff; opacity: 0; box-shadow: 3px 0 #fff, -3px 0 #fff, 0 3px #fff, 0 -3px #fff; }
+.g-pixel .spk.a { left: -5px; top: 3px; } .g-pixel .spk.b { right: -6px; top: 24px; } .g-pixel .spk.c { left: 22px; top: -9px; }
+@keyframes frames { to { transform: translateX(-384px); } }
+@keyframes blink { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+@keyframes hop { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(3px, 0); } }
+@keyframes swaypx { 0%, 100% { transform: translateX(-3px); } 50% { transform: translateX(3px); } }
+@keyframes flickpx { 0%, 100% { opacity: 1; } 30% { opacity: .25; } 40% { opacity: 1; } 70% { opacity: .4; } 75% { opacity: 1; } }
+.g-pixel.m-ok { animation: hop .1s steps(1) infinite; }
+.g-pixel:is(.m-ok, .m-pending, .m-ahead) .spk { animation: blink .6s steps(1) infinite; }
+.g-pixel .spk.b { animation-delay: .2s !important; } .g-pixel .spk.c { animation-delay: .4s !important; }
+.g-pixel.m-pending .spk { background: #ffb43c; box-shadow: 3px 0 #ffb43c, -3px 0 #ffb43c, 0 3px #ffb43c, 0 -3px #ffb43c; }
+.g-pixel.m-ahead .spk { background: #ff5a4a; box-shadow: 3px 0 #ff5a4a, -3px 0 #ff5a4a, 0 3px #ff5a4a, 0 -3px #ff5a4a; }
+.g-pixel.m-drift { animation: swaypx 1s steps(1) infinite, flickpx 1.3s steps(1) infinite; }
+.g-pixel:is(.m-drift, .m-down, .m-unknown, .socket) .strip { animation: none; }
+
+/* ink: a brushed ensō around a coloured wash */
+.g-ink .enso { width: 50px; height: 50px; background-size: contain; animation: spinZ calc(5s * var(--spin-k)) linear infinite; }
+.g-ink .rip { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px; border-radius: 50%; border: 1.5px solid rgb(27 23 18 / .55); opacity: 0; }
+.g-ink .seal { position: absolute; right: -2px; bottom: 0; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 2px; background: #b8322a; color: #f6ead6;
+  font-size: 12px; line-height: 1; transform: rotate(-6deg); box-shadow: inset 0 0 0 1.5px #b8322a, inset 0 0 0 2.5px #f6ead6; animation: throb 1.6s ease-in-out infinite; }
+@keyframes spinZ { to { transform: rotate(360deg); } }
+@keyframes ripple { from { transform: scale(.9); opacity: .55; } to { transform: scale(1.9); opacity: 0; } }
+.g-ink.m-ok { animation: buzz .1s linear infinite; }
+.g-ink.m-ok .rip { animation: ripple 2.4s ease-out infinite; } .g-ink.m-ok .rip + .rip { animation-delay: 1.2s; }
+.g-ink:is(.m-drift, .m-down, .m-unknown, .socket) .enso { animation-play-state: paused; }
+.g-ink.socket { opacity: .4; }
+
+/* the floor, where down gems lie */
+tr.floor th, tr.floor td { border-top: 1px solid var(--line-strong); background: linear-gradient(180deg, rgb(212 175 55 / .07), transparent 70%), var(--panel-solid); vertical-align: top; }
+tr.floor th { padding: 10px 16px; font-family: var(--serif); font-style: italic; font-weight: 500; font-size: 16px; color: var(--faint); }
+.rubble { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 6px; padding: 6px 4px 10px; min-height: 30px; }
+.fallen { all: unset; box-sizing: border-box; display: grid; justify-items: center; gap: 2px; padding: 2px 4px; border-radius: 10px; cursor: pointer; font-size: 10px; color: var(--muted); }
+.fallen:hover { background: rgb(255 240 200 / .05); }
+.fallen.sel { box-shadow: inset 0 0 0 1.5px var(--gold); }
+.g-pixel { --rest: rotate(90deg) scale(.8); }
+.g-ink { --rest: scale(.8, .45) rotate(6deg); }
+.fallen .gem { transform: var(--rest); filter: brightness(.75); }
+.fallen.dropping .gem { animation: drop 1.1s cubic-bezier(.5, 0, .75, .3) both; }
+[data-gems=pixel] .fallen.dropping .gem { animation-timing-function: steps(8); }
+@keyframes drop {
+  0% { transform: translate(var(--dx, 0), var(--dy, -120px)); }
+  62% { transform: var(--rest); animation-timing-function: ease-out; }
+  78% { transform: translateY(-7px) var(--rest); animation-timing-function: ease-in; }
+  100% { transform: var(--rest); }
+}
+.legend .lg { display: inline-flex; align-items: center; gap: 2px; }
+.legend .gem { zoom: .62; }
+
+/* the pixel scene: a night range */
+[data-gems=pixel] :is(.matrix-wrap, .legend) { background: #0b1026; }
+[data-gems=pixel] .matrix :is(thead th, th.corner, th.svc) { background: #0b1026; }
+[data-gems=pixel] .matrix tbody td { border-bottom-color: transparent; }
+[data-gems=pixel] :is(.cellbtn .st, .fallen, tr.floor th) { font-family: "Press Start 2P", var(--mono); font-size: 7px; font-style: normal; line-height: 1.6; letter-spacing: 0;
+  text-shadow: 2px 0 #0b1026, -2px 0 #0b1026, 0 2px #0b1026, 0 -2px #0b1026; }
+[data-gems=pixel] tr.floor :is(th, td) { background: #3a2a1e; border-top: 3px solid #5c4430; }
+[data-gems=pixel] .fallen { color: #e8ecff; }
+
+/* the ink scene: shan shui on rice paper */
+[data-gems=ink] :is(.matrix-wrap, .legend) { background: #efe6d2 url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3' seed='4'/><feColorMatrix values='0 0 0 0 .35  0 0 0 0 .28  0 0 0 0 .18  0 0 0 .2 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); color: #3d352c; }
+[data-gems=ink] .matrix :is(thead th, th.corner, th.svc) { background: #efe6d2; color: #1b1712; border-color: rgb(27 23 18 / .2); }
+[data-gems=ink] .matrix th.corner, [data-gems=ink] .kind { color: #5b5146; border-color: rgb(27 23 18 / .25); }
+[data-gems=ink] :is(.colhead, .rowhead, .cellbtn):hover { background: rgb(27 23 18 / .06); }
+[data-gems=ink] :is(.rowhead .pf, tr.group th) { color: #8a3b2a; }
+[data-gems=ink] .matrix tbody td { border-bottom-color: rgb(27 23 18 / .07); }
+[data-gems=ink] .matrix td.na { color: #8a7f70; }
+[data-gems=ink] .cellbtn .st { color: #3d352c; font-family: var(--serif); font-size: 13px; font-style: italic; text-shadow: 0 0 4px #efe6d2, 0 0 8px #efe6d2; }
+[data-gems=ink] .cellbtn.m-ok .st { color: #1b1712; }
+[data-gems=ink] .cellbtn:is(.m-drift, .m-pending) .st { color: #9a5a12; }
+[data-gems=ink] .cellbtn:is(.m-ahead, .m-down) .st { color: #b8322a; }
+[data-gems=ink] :is(.cellbtn, .fallen).sel { box-shadow: inset 0 0 0 1.5px #b8322a, inset 0 0 18px rgb(184 50 42 / .12); }
+[data-gems=ink] .cellbtn.sel::after { background: #b8322a; box-shadow: none; }
+[data-gems=ink] .cellbtn.focus { background: rgb(184 50 42 / .06); }
+[data-gems=ink] tr.floor :is(th, td) { background: transparent; border-top: 2px solid rgb(27 23 18 / .55); }
+[data-gems=ink] tr.floor th, [data-gems=ink] .fallen { color: #5b5146; }
+
+.inspector { border-left: 1px solid var(--line); padding: 18px 20px; display: grid; gap: 12px; align-content: start; max-height: min(72vh, 900px); overflow: auto; }
+.inspector { position: relative; }
+.inspector .close { position: absolute; top: 10px; right: 10px; padding: 2px 9px; }
+.inspector h3 { margin: 0; padding-right: 32px; font-family: var(--serif); font-weight: 500; font-size: 24px; line-height: 1.1; }
+.inspector h3 small { display: block; font-family: var(--sans); font-size: 12px; color: var(--muted); letter-spacing: .04em; margin-top: 4px; }
+.inspector dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; }
+.inspector dt { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; padding-top: 2px; }
+.inspector dd { margin: 0; overflow-wrap: anywhere; }
+.inspector ul { margin: 0; padding-left: 16px; font-family: var(--mono); font-size: 12px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 14px; padding: 12px 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+
+.badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; border: 1px solid color-mix(in srgb, currentColor 28%, transparent); white-space: nowrap; }
 .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
 .s-OK, .s-success { color: var(--ok); background: var(--ok-bg); }
 .s-BEHIND, .s-SCHEMA_PENDING, .s-running, .s-pending, .s-created, .s-preparing, .s-waiting_for_resource, .s-scheduled { color: var(--warn); background: var(--warn-bg); }
 .s-DB_AHEAD, .s-DOWN, .s-failed, .s-error { color: var(--bad); background: var(--bad-bg); }
-.s-canceled, .s-skipped, .s-manual { color: var(--off); background: var(--off-bg); }
+.s-NEVER, .s-UNKNOWN, .s-canceled, .s-skipped, .s-manual { color: var(--off); background: var(--off-bg); }
 .s-running::before, .s-pending::before, .s-created::before, .s-preparing::before { animation: pulse 1.3s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.7); opacity: .35; } }
 
@@ -149,33 +289,35 @@ button:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 .link { border: 0; padding: 0; background: none; color: var(--gold-hi); font-weight: 600; border-radius: 6px; }
 .link:hover { background: none; color: #fff; text-shadow: 0 0 18px rgb(212 175 55 / .6); }
 .icon { width: 36px; height: 36px; padding: 0; flex: none; }
-
-input[type=checkbox] { appearance: none; width: 17px; height: 17px; margin: 0; border-radius: 6px; border: 1px solid var(--line-strong); background: transparent; display: grid; place-items: center; cursor: pointer; transition: all .3s var(--ease); }
-input[type=checkbox]::after { content: ""; width: 9px; height: 5px; border: 2px solid #1b1406; border-top: 0; border-right: 0; transform: rotate(-45deg) scale(0); margin-top: -2px; transition: transform .3s var(--ease); }
-input[type=checkbox]:checked { background: var(--gold-grad); border-color: transparent; box-shadow: 0 0 14px rgb(212 175 55 / .5); }
-input[type=checkbox]:checked::after { transform: rotate(-45deg) scale(1); }
+a { color: var(--gold-hi); }
 
 label { display: grid; gap: 6px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .12em; }
-input[type=text], input[type=url], input[type=number], input[type=password] {
+input[type=text], input[type=url], input[type=number], input[type=password], input[type=search], select, textarea {
   font: inherit; font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--ink); width: 100%; min-width: 0;
-  background: rgb(0 0 0 / .35); border: 1px solid var(--line); border-radius: var(--r-md); padding: 10px 13px;
+  background: rgb(0 0 0 / .35); border: 1px solid var(--line); border-radius: var(--r-md); padding: 9px 12px;
   transition: border-color .35s var(--ease), box-shadow .35s var(--ease), background .35s; }
-input:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 4px rgb(212 175 55 / .12); background: rgb(0 0 0 / .5); }
+textarea { font-family: var(--mono); font-size: 12.5px; resize: vertical; min-height: 96px; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 4px rgb(212 175 55 / .12); background: rgb(0 0 0 / .5); }
 input[readonly] { color: var(--muted); }
 input:user-invalid { border-color: var(--bad); }
 
-.deploy { padding: 16px 20px; border-bottom: 1px solid rgb(212 175 55 / .07); display: grid; gap: 10px; }
+.deploy { padding: 14px 20px; border-bottom: 1px solid rgb(212 175 55 / .07); display: grid; gap: 8px; }
 .deploy:last-child { border-bottom: 0; }
-.deploy .head { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; color: var(--muted); }
+.deploy .head { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; color: var(--muted); }
 .deploy .head b { font-family: var(--serif); font-size: 17px; font-weight: 600; color: var(--ink); }
-.runs { display: flex; flex-wrap: wrap; gap: 6px; }
+.deploy details summary { cursor: pointer; color: var(--muted); font-size: 12.5px; list-style: none; }
+.deploy details summary::before { content: "›"; display: inline-block; margin-right: 6px; transition: transform .3s var(--ease); color: var(--gold); }
+.deploy details[open] summary::before { transform: rotate(90deg); }
+.runs { display: grid; gap: 6px; margin-top: 8px; }
+.runs .site { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.runs .site b { font-family: var(--serif); font-size: 15px; min-width: 90px; }
 .runs a { text-decoration: none; border-radius: 999px; }
 
 .skel { display: block; height: 11px; border-radius: 6px; background: linear-gradient(90deg, rgb(212 175 55 / .05), rgb(212 175 55 / .2), rgb(212 175 55 / .05)); background-size: 220% 100%; animation: shimmer 1.8s ease-in-out infinite; }
 @keyframes shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 
 /* ---------- dialogs ---------- */
-dialog { border: 0; border-radius: 26px; background: linear-gradient(180deg, rgb(28 24 17 / .96), rgb(12 11 9 / .97)); color: var(--ink); padding: 0; width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - 48px);
+dialog { border: 0; border-radius: 26px; background: linear-gradient(180deg, rgb(28 24 17 / .96), rgb(12 11 9 / .97)); color: var(--ink); padding: 0; width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 48px);
   box-shadow: var(--shadow), 0 0 140px -50px rgb(212 175 55 / .4);
   opacity: 0; transform: translateY(12px) scale(.97);
   transition: opacity .45s var(--ease), transform .55s var(--ease), overlay .45s allow-discrete, display .45s allow-discrete; }
@@ -188,16 +330,30 @@ dialog form { display: flex; flex-direction: column; max-height: inherit; }
 dialog .body { padding: 26px 28px 20px; display: grid; gap: 16px; overflow: auto; }
 dialog h3 { margin: 0; font-family: var(--serif); font-weight: 500; font-size: 28px; line-height: 1.15; }
 dialog .actions { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 28px 22px; border-top: 1px solid var(--line); }
-dialog ul { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
 .warnbox { background: var(--warn-bg); color: var(--warn); border: 1px solid rgb(240 196 108 / .25); border-radius: var(--r-md); padding: 12px 14px; }
+.plan { display: grid; gap: 8px; max-height: 40vh; overflow: auto; }
+.plan .site { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.plan .site b { font-family: var(--serif); font-size: 17px; min-width: 100px; }
 #history { width: min(980px, calc(100vw - 32px)); }
-#settings { width: min(780px, calc(100vw - 32px)); }
+#settings { width: min(880px, calc(100vw - 32px)); }
 .timeline { max-height: 60vh; overflow: auto; }
+.timeline table { width: 100%; border-collapse: collapse; }
+.timeline th, .timeline td { text-align: left; padding: 10px 12px; border-bottom: 1px solid rgb(212 175 55 / .07); white-space: nowrap; vertical-align: top; }
+.timeline th { font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .16em; }
+.timeline .detail { white-space: normal; overflow-wrap: anywhere; color: var(--muted); font-size: 12.5px; min-width: 200px; }
 fieldset { border: 1px solid var(--line); border-radius: 18px; padding: 14px 16px 16px; margin: 0; display: grid; gap: 12px; background: rgb(0 0 0 / .18); min-width: 0; }
 legend { font-family: var(--serif); font-size: 19px; padding: 0 8px; color: var(--gold-hi); }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
-.siterow { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(0, 3fr) auto; gap: 8px; align-items: center; animation: rise .5s var(--ease) both; }
+.siterow { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 3fr) 92px auto; gap: 8px; align-items: center; animation: rise .5s var(--ease) both; }
+.svcrow { display: grid; grid-template-columns: minmax(120px, 2fr) minmax(70px, 1fr) 104px minmax(100px, 2fr) auto; gap: 8px; align-items: center; animation: rise .5s var(--ease) both; }
+.rowlabels { display: grid; gap: 8px; font-size: 10.5px; color: var(--faint); text-transform: uppercase; letter-spacing: .12em; padding: 0 4px; }
 .hint { color: var(--muted); font-size: 12.5px; margin: 0; text-transform: none; letter-spacing: 0; }
+.info { width: 18px; height: 18px; padding: 0; font-size: 11px; font-weight: 600; color: var(--gold); border-color: var(--line); vertical-align: 1px; }
+.info::before { content: "?"; }
+label:has(> .info) { grid-template-columns: auto 1fr; align-items: center; }
+label:has(> .info) > :is(input, select, textarea, .copy) { grid-column: 1 / -1; }
+label > .info { grid-area: 1 / 2; justify-self: start; }
+.tip { position: fixed; inset: auto; margin: 0; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--panel-solid); color: var(--ink); font-size: 13px; line-height: 1.55; white-space: pre-line; box-shadow: var(--shadow); }
 .copy { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .err { color: var(--bad); min-height: 1.2em; }
 
@@ -206,14 +362,21 @@ legend { font-family: var(--serif); font-size: 19px; padding: 0 8px; color: var(
   transition: opacity .5s var(--ease), transform .6s var(--ease); }
 #toast.on { opacity: 1; transform: translate(-50%, 0); }
 
+@media (max-width: 980px) {
+  .fleet { grid-template-columns: 1fr; }
+  .inspector { border-left: 0; border-top: 1px solid var(--line); max-height: none; }
+}
 @media (max-width: 640px) {
   .meta { order: 3; width: 100%; gap: 16px; }
   .me .who { display: none; }
   .bar h2 { width: 100%; }
+  .bar input[type=search] { width: 100%; }
   .login-card { padding: 32px 22px 26px; }
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .card { padding: 14px 16px 12px; }
-  .card .n { font-size: 36px; }
+  .card .n { font-size: 34px; }
+  .rowhead { min-width: 150px; padding: 6px 10px; }
+  .kind { display: none; }
+  .svcrow { grid-template-columns: 1fr 1fr; }
   dialog .body { padding: 22px 18px 16px; }
   dialog .actions { padding: 14px 18px 18px; }
 }
@@ -228,15 +391,15 @@ legend { font-family: var(--serif); font-size: 19px; padding: 0 8px; color: var(
 
 <div class="stage" id="boot" role="status" aria-live="polite">
   <div>
-    <div class="wordmark">Sejajar</div>
-    <div class="whisper">aligning the fleet…</div>
+    <div class="wordmark">Resonate</div>
+    <div class="whisper">tuning the gems…</div>
   </div>
 </div>
 
 <div class="stage gone" id="login">
   <div class="login-card">
-    <div class="wordmark">Sejajar</div>
-    <div class="tagline">Every site, one version.</div>
+    <div class="wordmark">Resonate</div>
+    <div class="tagline">Every site in tune with main.</div>
     <div id="login-gitlab" hidden>
       <a class="btn primary big" href="/auth/gitlab">Sign in with GitLab</a>
       <div class="rule"></div>
@@ -254,7 +417,7 @@ legend { font-family: var(--serif); font-size: 19px; padding: 0 8px; color: var(
 
 <div id="app" hidden>
   <header>
-    <div class="wordmark">Sejajar</div>
+    <div class="wordmark">Resonate</div>
     <div class="meta">
       <span><small>Branch</small><b id="branch">–</b></span>
       <span><small>Head</small><b id="head">–</b></span>
@@ -277,22 +440,19 @@ legend { font-family: var(--serif); font-size: 19px; padding: 0 8px; color: var(
 
     <section class="panel reveal" style="--i:1">
       <div class="bar">
-        <h2>Sites</h2>
+        <h2>Fleet</h2>
+        <div class="seg" id="gem-style" role="group" aria-label="Gem style"></div>
+        <input type="search" id="filter" placeholder="Filter services" aria-label="Filter services">
         <button id="select-stale">Select out of date</button>
         <button id="select-none">Clear</button>
         <div class="spacer"></div>
         <button class="primary" id="deploy" disabled>Deploy</button>
       </div>
-      <div class="scroll">
-        <table>
-          <thead><tr>
-            <th><input type="checkbox" id="all" aria-label="Select all sites"></th>
-            <th>Site</th><th>State</th><th>Commit</th><th>Behind</th>
-            <th>Schema (DB)</th><th>Pending</th><th>Unknown</th><th>Detail</th>
-          </tr></thead>
-          <tbody id="sites"></tbody>
-        </table>
+      <div class="fleet">
+        <div class="matrix-wrap"><div class="range" id="range" aria-hidden="true"></div><table class="matrix" id="matrix"></table></div>
+        <aside class="inspector" id="inspector" hidden></aside>
       </div>
+      <div class="legend" id="legend"></div>
     </section>
 
     <section class="panel reveal" style="--i:2">
@@ -319,7 +479,7 @@ legend { font-family: var(--serif); font-size: 19px; padding: 0 8px; color: var(
   <form method="dialog">
     <div class="body">
       <h3 id="history-title"></h3>
-      <div class="timeline scroll" id="history-body"></div>
+      <div class="timeline" id="history-body"></div>
     </div>
     <div class="actions"><button value="close">Close</button></div>
   </form>
@@ -329,37 +489,64 @@ legend { font-family: var(--serif); font-size: 19px; padding: 0 8px; color: var(
   <form id="settings-form">
     <div class="body">
       <h3>Settings</h3>
-      <p class="hint">Stored in the database and applied at once. Only <code>DATABASE_URL</code> and <code>GITLAB_TOKEN</code> live in the environment.</p>
+      <p class="hint">Stored in the database and applied at once. Only <code>DATABASE_URL</code> and <code>GITLAB_TOKEN</code> live in the environment. Templates take <code>{site}</code> <code>{service}</code> <code>{postfix}</code>.</p>
       <fieldset>
-        <legend>GitLab</legend>
+        <legend>GitLab <button type="button" class="info" data-tip="Where your code lives. Resonate asks it what the latest commit is, and asks it to run deploys."></button></legend>
         <div class="grid2">
-          <label>URL <input type="url" name="url" placeholder="https://gitlab.example.com"></label>
-          <label>Project (path or id) <input type="text" name="project" placeholder="group/app"></label>
-          <label>Branch <input type="text" name="branch" placeholder="main"></label>
-          <label>Poll every (seconds) <input type="number" name="poll" min="10" required></label>
-        </div>
-        <label>Version API token (optional) <input type="password" name="vtoken" autocomplete="off"></label>
-      </fieldset>
-      <fieldset>
-        <legend>GitLab sign-in</legend>
-        <p class="hint">Create an application on your GitLab (Admin → Applications, or the group's Settings → Applications) with scope <code>api</code> and this redirect URI. Once both fields are set, only GitLab sign-in works.</p>
-        <label>Redirect URI <span class="copy"><input type="text" name="redirect" readonly><button type="button" id="copy-redirect">Copy</button></span></label>
-        <div class="grid2">
-          <label>Application ID <input type="text" name="oauth_id" autocomplete="off"></label>
-          <label>Secret <input type="password" name="oauth_secret" autocomplete="off"></label>
+          <label>URL <input type="url" name="url" placeholder="https://gitlab.example.com"><button type="button" class="info" data-tip="The address of your GitLab, the one you open in the browser.&#10;Example: https://gitlab.example.com"></button></label>
+          <label>Project (path or id) <input type="text" name="project" placeholder="group/app"><button type="button" class="info" data-tip="Which repository holds the app: the part of its address after the GitLab URL (group/app), or the Project ID shown on the project page."></button></label>
+          <label>Branch <input type="text" name="branch" placeholder="main"><button type="button" class="info" data-tip="The branch every site should be running, usually main. A cell is “behind” when it runs an older commit than this branch’s latest."></button></label>
+          <label>Poll every (seconds) <input type="number" name="poll" min="10" required><button type="button" class="info" data-tip="How often Resonate re-checks every site and GitLab. Lower means a fresher dashboard but more requests. 60 is a good start; 10 is the minimum."></button></label>
         </div>
       </fieldset>
       <fieldset>
-        <legend>Sites</legend>
-        <p class="hint">Name = GitLab environment, passed to CI as <code>$SITE</code>.</p>
+        <legend>Deploy pipeline <button type="button" class="info" data-tip="When you press Deploy, Resonate asks GitLab to start one pipeline per selected cell. This part says what to tell that pipeline, and where to look later to see what got deployed."></button></legend>
+        <p class="hint">Each selected cell triggers one pipeline on the branch, given these values. Pass <code>{sha}</code> so the CI builds the confirmed commit even if main moves during a large deploy. Workers and jobs expose no API, so their commit comes from the GitLab environment their deploy job records.</p>
+        <div class="grid2">
+          <label>Pass as <select name="trigger_as"><option value="inputs">spec:inputs</option><option value="variables">CI variables</option></select><button type="button" class="info" data-tip="How the pipeline inputs below reach your .gitlab-ci.yml.&#10;spec:inputs: your CI declares them under spec: inputs: and reads $[[ inputs.SITE ]]. Needs GitLab 17.10+.&#10;CI variables: your CI reads $SITE. Works on any GitLab."></button></label>
+          <label>Environment <input type="text" name="env" placeholder="{site}-{service}{postfix}"><button type="button" class="info" data-tip="The environment name your deploy job records in GitLab (environment: name: in .gitlab-ci.yml). Workers and jobs can’t tell Resonate what they run, so it reads their last successful deployment here instead.&#10;Example: production-{site}-{service}{postfix}"></button></label>
+          <label>API environment (blank = same) <input type="text" name="api_env" placeholder="{site}-{service}{postfix}-stable"><button type="button" class="info" data-tip="The same thing for APIs only, if their deploy job records a different name (for example a -stable suffix when you run canaries). Leave blank when APIs use the Environment above."></button></label>
+        </div>
+        <label><span>Pipeline inputs, one <code>KEY=value</code> per line</span> <textarea name="inputs" spellcheck="false" placeholder="SITE={site}&#10;SERVICE={service}&#10;POSTFIX={postfix}&#10;DEPLOY_SHA={sha}"></textarea><button type="button" class="info" data-tip="What each deploy pipeline is told, one KEY=value per line. The {placeholders} are filled in per cell:&#10;{site}: the site’s name&#10;{service}: the service’s name&#10;{postfix}: the variant, usually empty&#10;{sha}: the exact commit you confirmed&#10;Example: SITE={site} becomes SITE=jakarta."></button></label>
+      </fieldset>
+      <fieldset>
+        <legend>Sites <button type="button" class="info" data-tip="A site is one place your app runs, such as one customer or one region. Each site is a column on the dashboard."></button></legend>
+        <p class="hint">Columns. The version URL is where the site's APIs answer <code>/version</code>; leave it blank to track APIs by their GitLab deployment too.</p>
+        <div class="siterow rowlabels"><span>Name <button type="button" class="info" data-tip="A short name: letters, digits, - or _. It fills {site} in every template, so use the name your CI and URLs use."></button></span><span>Version URL <button type="button" class="info" data-tip="Where this site’s APIs report which commit they run (see VERSION_API.md). {site}, {service} and {postfix} are filled in for each API.&#10;Example: https://{site}.example.com/{service}{postfix}/version&#10;Blank: this site’s APIs are read from GitLab deployments, like workers."></button></span><span>Agent ID <button type="button" class="info" data-tip="The ID of the GitLab agent for Kubernetes running in this site’s cluster. With it, Resonate looks at the pods of this site’s workers and knows when they are really down, not just deployed.&#10;Find it in GitLab: Operate → Kubernetes clusters, the number in the agent’s row.&#10;Blank or 0: no pod checks for this site."></button></span><span></span></div>
         <div id="site-rows" style="display:grid;gap:8px"></div>
         <div><button type="button" id="add-site">Add site</button></div>
+        <label>Version API token (optional) <input type="password" name="vtoken" autocomplete="off"><button type="button" class="info" data-tip="A shared password your /version endpoints can require. Resonate sends it as “Authorization: Bearer …”. Only needed if your APIs check it. Leave blank to keep the current one."></button></label>
+      </fieldset>
+      <fieldset>
+        <legend>Services <button type="button" class="info" data-tip="A service is one thing you deploy: an API, a background worker or a one-off job. Each service is a row on the dashboard."></button></legend>
+        <p class="hint">Rows. A postfix is a separately deployed variant (<code>api-core</code> + <code>-partner</code>). Sites: comma-separated, blank = every site. Jobs are one-off: never selected by "out of date".</p>
+        <div class="svcrow rowlabels"><span>Name <button type="button" class="info" data-tip="The service’s name as your CI knows it. It fills {service}."></button></span><span>Postfix <button type="button" class="info" data-tip="For a second copy of a service that is deployed on its own. api-core with postfix -partner gets its own row, api-core-partner. It fills {postfix}. Leave blank for the normal one."></button></span><span>Kind <button type="button" class="info" data-tip="api: answers /version, so Resonate asks it directly and also sees its database migrations.&#10;worker: runs in the background. Read from its GitLab deployment.&#10;job: runs once when deployed, such as a data fix. Never picked by “Select out of date”; choose it by hand."></button></span><span>Sites <button type="button" class="info" data-tip="Which sites run this service, separated by commas, such as jakarta, bandung. Blank means every site."></button></span><span></span></div>
+        <div id="svc-rows" style="display:grid;gap:8px"></div>
+        <div><button type="button" id="add-svc">Add service</button></div>
+      </fieldset>
+      <fieldset>
+        <legend>Kubernetes pods <button type="button" class="info" data-tip="Deployment history says what was deployed, not whether it is still running. For sites with an Agent ID, Resonate also asks the GitLab agent for Kubernetes in that cluster how many of a service’s pods are ready. None ready: the gem falls to the floor.&#10;Used for workers, and for APIs on sites without a version URL. Jobs finish by design, so they are never checked."></button></legend>
+        <p class="hint">Resonate reads pods through your GitLab agent: no cluster credentials needed. The agent's config must grant this project <code>user_access</code>, and <code>GITLAB_TOKEN</code> needs the <code>k8s_proxy</code> scope. A stopped GitLab environment also counts as down.</p>
+        <div class="grid2">
+          <label>Namespace <input type="text" name="pod_ns" placeholder="production"><button type="button" class="info" data-tip="The Kubernetes namespace a service’s pods run in. It can use {site}, {service} and {postfix}.&#10;Example: production, or {site} if each site has its own namespace."></button></label>
+          <label>Label selector <input type="text" name="pod_sel" placeholder="app={service}{postfix}"><button type="button" class="info" data-tip="How to find one service’s pods: the labels on them, as kubectl -l takes them. It must contain {service}, so each service finds only its own pods.&#10;Example: app={service}{postfix} or app.kubernetes.io/name={service}{postfix}"></button></label>
+          <label>Proxy URL (blank = default) <input type="url" name="k8s_proxy"><button type="button" class="info" data-tip="Where GitLab’s Kubernetes proxy (KAS) answers. Leave blank for the usual place: kas.gitlab.com on GitLab.com, or /-/kubernetes-agent/k8s-proxy on your own GitLab. Set it only if your admin put KAS somewhere else."></button></label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>GitLab sign-in <button type="button" class="info" data-tip="Lets people sign in with their GitLab account instead of a shared password. What they may do follows their role on the project (Maintainers can change Settings), and their deploys run as them."></button></legend>
+        <p class="hint">Create an application on your GitLab (Admin → Applications, or the group's Settings → Applications) with scope <code>api</code> and this redirect URI. Once both fields are set, only GitLab sign-in works.</p>
+        <label>Redirect URI <span class="copy"><input type="text" name="redirect" readonly><button type="button" id="copy-redirect">Copy</button></span><button type="button" class="info" data-tip="Where GitLab sends people back after they sign in. Paste it into the GitLab application’s Redirect URI field exactly as shown."></button></label>
+        <div class="grid2">
+          <label>Application ID <input type="text" name="oauth_id" autocomplete="off"><button type="button" class="info" data-tip="Create an application in GitLab (Admin → Applications, or the group’s Settings → Applications) with scope api and the Redirect URI above. GitLab shows its Application ID after you save it."></button></label>
+          <label>Secret <input type="password" name="oauth_secret" autocomplete="off"><button type="button" class="info" data-tip="The application’s Secret, from the same GitLab page. Leave blank to keep the current one. Once the ID and Secret are both set, only GitLab sign-in works."></button></label>
+        </div>
       </fieldset>
       <fieldset id="fallback">
-        <legend>Setup sign-in</legend>
+        <legend>Setup sign-in <button type="button" class="info" data-tip="The built-in login for first setup. It stops working once GitLab sign-in is on."></button></legend>
         <div class="grid2">
           <label>User <input type="text" name="user" autocomplete="username"></label>
-          <label>New password (blank = keep) <input type="password" name="password" minlength="8" autocomplete="new-password"></label>
+          <label>New password (blank = keep) <input type="password" name="password" minlength="8" autocomplete="new-password"><button type="button" class="info" data-tip="At least 8 characters. Leave blank to keep the current password."></button></label>
         </div>
       </fieldset>
       <div id="settings-err" class="err" role="alert"></div>
@@ -373,15 +560,17 @@ legend { font-family: var(--serif); font-size: 19px; padding: 0 8px; color: var(
 
 <div id="toast" role="status" aria-live="polite"></div>
 
+
 <script>
-const STATES = ["OK", "BEHIND", "SCHEMA_PENDING", "DB_AHEAD", "DOWN"];
-const LABEL = { OK: "Aligned", BEHIND: "Behind", SCHEMA_PENDING: "Schema pending", DB_AHEAD: "DB ahead", DOWN: "Down" };
+const STATES = ["OK", "BEHIND", "SCHEMA_PENDING", "DB_AHEAD", "DOWN", "NEVER"];
+const LABEL = { OK: "Resonating", BEHIND: "Behind", SCHEMA_PENDING: "Schema pending", DB_AHEAD: "DB ahead", DOWN: "Down", NEVER: "Never deployed", UNKNOWN: "Unknown" };
+const KIND = { api: "APIs", worker: "Workers", job: "Jobs" };
 const ROLE = { 20: "Reporter", 30: "Developer", 40: "Maintainer", 50: "Owner" };
 const ACTIVE = new Set(["created", "waiting_for_resource", "preparing", "pending", "running", "scheduled"]);
 const $ = (id) => document.getElementById(id);
 const still = matchMedia("(prefers-reduced-motion: reduce)");
-let me = null, snap = null, deployTimer = null, statusTimer = null, wasBusy = false, firstSites = true;
-const selected = new Set();
+let me = null, snap = null, focusKey = null, deployTimer = null, statusTimer = null, wasBusy = false, firstPaint = true;
+const selected = new Set(); // cell keys
 
 // h builds DOM nodes; text is always set as text, never parsed as HTML.
 function h(tag, attrs = {}, ...kids) {
@@ -397,6 +586,117 @@ function h(tag, attrs = {}, ...kids) {
 const short = (sha) => (sha || "").slice(0, 8);
 const badge = (s, text) => h("span", { class: "badge s-" + s }, text || LABEL[s] || s);
 const when = (t) => new Date(t).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+const svcId = (s) => s.name + (s.postfix || "");
+// DRIFT is how many commits behind main a gem can fall before it stops just
+// fading and starts to sway and flicker.
+const DRIFT = 10;
+
+// ---------- gems: two switchable styles ----------
+const HUE = { api: 212, worker: 150, job: 285 }; // sapphire, emerald, amethyst
+const GEM_STYLES = { pixel: "Pixel", ink: "Ink" };
+let gemStyle = "pixel";
+try { const saved = localStorage.getItem("gem-style"); if (saved in GEM_STYLES) gemStyle = saved; } catch {}
+document.documentElement.dataset.gems = gemStyle;
+
+// mood is what a cell's gem does: m names the behaviour, loss (0..1) the colour it has lost,
+// one tenth of DRIFT per commit behind.
+function mood(c) {
+  const behind = c.behind < 0 ? DRIFT / 2 : c.behind;
+  if (c.state === "DOWN") return { m: "down", loss: .85 };
+  if (c.state === "NEVER") return { m: "never", loss: 1 };
+  if (c.state === "UNKNOWN") return { m: "unknown", loss: 1 };
+  if (c.state === "OK") return { m: "ok", loss: 0 };
+  if (c.state === "BEHIND" && behind > DRIFT) return { m: "drift", loss: 1 };
+  return { m: { SCHEMA_PENDING: "pending", DB_AHEAD: "ahead" }[c.state] || "behind", loss: Math.min(behind / DRIFT, 1) };
+}
+
+// gem builds one gem in the chosen style. socket draws the empty mount a down or
+// never-deployed gem leaves behind. Behind gems spin slower: their resonance dies down.
+function gem(kind, md, socket) {
+  const hue = HUE[kind] ?? HUE.api, loss = Math.round(md.loss * 10) / 10;
+  const el = h("div", { class: `gem g-${gemStyle} m-${md.m}${socket ? " socket" : ""}${md.failed ? " x-failed" : ""}`, "aria-hidden": "true",
+    style: `--hue:${hue};--light:${md.m === "ok" ? 1 : md.m === "behind" ? ((1 - loss) * .5).toFixed(2) : 0};` +
+      `--spin-k:${["ok", "pending", "ahead"].includes(md.m) ? 1 : 1 + loss * 4};--tw:${(-Math.random() * 2.6).toFixed(2)}s` });
+  GEMS[gemStyle](el, hue, loss, md, socket);
+  return el;
+}
+
+const gemCache = new Map();
+const cached = (key, make) => gemCache.has(key) ? gemCache.get(key) : (gemCache.set(key, make()), gemCache.get(key));
+const GEMS = {
+  pixel(el, hue, loss, md, socket) {
+    el.innerHTML = '<i class="px"><i class="win"><i class="strip"></i></i><i class="spk a"></i><i class="spk b"></i><i class="spk c"></i></i>';
+    el.querySelector(".strip").style.backgroundImage = `url(${cached(`p${hue}|${loss}|${!!socket}`, () => pixelSprite(hue, loss, socket))})`;
+  },
+
+  ink(el, hue, loss, md, socket) {
+    el.innerHTML = `<i class="rip"></i><i class="rip"></i><i class="enso"></i>${md.m === "pending" ? '<i class="seal">待</i>' : md.m === "ahead" ? '<i class="seal">超</i>' : ""}`;
+    el.querySelector(".enso").style.backgroundImage = `url("${cached(`i${hue}|${loss}`, () => ensoImage(hue, loss))}")`;
+  },
+};
+
+// pixelSprite draws eight frames of a 16x13 gem turning on its axis: the outline
+// stays, the facet bands slide across. A socket is the outline alone.
+function pixelSprite(hue, loss, socket) {
+  const W = 16, R = 13, F = 8, half = [3, 5, 6, 7, 8, 8, 7, 6, 5, 4, 3, 2, 1];
+  const c = document.createElement("canvas");
+  c.width = W * F; c.height = R;
+  const g = c.getContext("2d"), sat = 90 * (1 - loss), lk = 1 - .5 * loss;
+  const tones = [12, 30, 46, 64, 86].map((l, i) => `hsl(${hue} ${i ? sat : sat * .6}% ${l * lk}%)`);
+  for (let f = 0; f < F; f++) {
+    const turn = f / F * Math.PI / 4;
+    for (let y = 0; y < R; y++) {
+      const hw = half[y];
+      for (let x = 8 - hw; x < 8 + hw; x++) {
+        const u = Math.max(-1, Math.min(1, (x + .5 - 8) / hw));
+        const band = Math.floor((Math.asin(u) + turn) / (Math.PI / 4) + 8) % 2;
+        const edge = x === 8 - hw || x === 8 + hw - 1 || y === 0 || y === R - 1 || x < 8 - half[Math.max(0, y - 1)] || x >= 8 + half[Math.max(0, y - 1)];
+        if (socket) { if (edge && (x + y) % 2) { g.fillStyle = "#6f675a"; g.fillRect(f * W + x, y, 1, 1); } continue; }
+        let t = y === 5 ? 3 : y <= 1 ? 3 + band : y <= 4 ? 2 + band : 1 + band;
+        if (u > .45) t = Math.max(1, t - 1);
+        if (u < -.6 && y > 5) t = Math.min(3, t + 1);
+        g.fillStyle = tones[edge ? 0 : t];
+        g.fillRect(f * W + x, y, 1, 1);
+      }
+    }
+    if (!socket) { g.fillStyle = "#fff"; g.fillRect(f * W + 5, 2, 1, 1); g.fillRect(f * W + 6, 1, 1, 1); g.fillRect(f * W + 4, 3, 1, 1); }
+  }
+  return c.toDataURL();
+}
+
+// ensoImage paints the ink gem once, as an image: a brush circle around a wash
+// of the kind's colour. The ink thins and the wash pales as loss grows.
+function ensoImage(hue, loss) {
+  const out = [], inn = [];
+  for (let i = 0; i <= 64; i++) {
+    const t = i / 64, a = -2 + 5.65 * t, th = 12 * Math.pow(1 - t, .5) + 1.8 + Math.sin(t * 23) * .6 * (1 - t), r = 32 + Math.sin(t * 7) * .8;
+    out.push(`${(50 + Math.cos(a) * (r + th / 2)).toFixed(1)} ${(50 + Math.sin(a) * (r + th / 2)).toFixed(1)}`);
+    inn.unshift(`${(50 + Math.cos(a) * (r - th / 2)).toFixed(1)} ${(50 + Math.sin(a) * (r - th / 2)).toFixed(1)}`);
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-6 -6 112 112">
+    <filter id="w" x="-30%" y="-30%" width="160%" height="160%"><feTurbulence type="fractalNoise" baseFrequency=".05" numOctaves="3" seed="11"/><feDisplacementMap in="SourceGraphic" scale="10"/><feGaussianBlur stdDeviation="2.2"/></filter>
+    <filter id="d" x="-20%" y="-20%" width="140%" height="140%"><feTurbulence type="fractalNoise" baseFrequency="1.6 .25" numOctaves="2" seed="8" result="t"/><feColorMatrix in="t" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.3 1.55" result="m"/><feComposite in="SourceGraphic" in2="m" operator="in" result="c"/><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" seed="3" result="t2"/><feDisplacementMap in="c" in2="t2" scale="3"/></filter>
+    <circle cx="50" cy="50" r="25" fill="hsl(${hue},${(45 * (1 - loss)).toFixed(0)}%,${(55 + loss * 20).toFixed(0)}%)" fill-opacity="${(.75 * (1 - loss * .7)).toFixed(2)}" filter="url(#w)"/>
+    <circle cx="43" cy="43" r="7" fill="#fff" fill-opacity="${(.45 * (1 - loss)).toFixed(2)}" filter="url(#w)"/>
+    <path d="M${out.join(" L")} L${inn.join(" L")} Z" fill="hsl(30,12%,${(10 + loss * 48).toFixed(0)}%)" filter="url(#d)"/></svg>`;
+  return "data:image/svg+xml," + encodeURIComponent(svg);
+}
+
+function gemSwitch() {
+  $("gem-style").replaceChildren(...Object.entries(GEM_STYLES).map(([k, label]) =>
+    h("button", { type: "button", "aria-pressed": String(k === gemStyle), onclick: () => setGemStyle(k) }, label)));
+}
+function setGemStyle(k) {
+  gemStyle = k;
+  document.documentElement.dataset.gems = k;
+  try { localStorage.setItem("gem-style", k); } catch {}
+  rangeKey = "";
+  gemSwitch();
+  legend();
+  if (snap && $("matrix").tFoot) render();
+}
+const keyOf = (site, service, postfix) => `${site}\u0000${service}\u0000${postfix || ""}`;
+const cellKey = (c) => keyOf(c.site, c.service, c.postfix);
 
 // ---------- silk: gold threads drifting like a sheet of silk ----------
 const silk = (() => {
@@ -437,8 +737,6 @@ const silk = (() => {
   }
   function frame(now) {
     raf = requestAnimationFrame(frame);
-    const gap = mode === "full" ? 0 : 66; // ambient: ~15 fps is plenty behind the dashboard
-    if (last && now - last < gap) return;
     t += Math.min(now - (last || now - 16), 64) * .00022;
     last = now;
     draw();
@@ -448,7 +746,8 @@ const silk = (() => {
     mode(m) {
       mode = m; c.dataset.mode = m; size();
       cancelAnimationFrame(raf); last = 0;
-      if (still.matches) draw(); else raf = requestAnimationFrame(frame);
+      // ambient: drawn once, so the blurred panels over it never re-blur per frame
+      if (still.matches || m === "ambient") draw(); else raf = requestAnimationFrame(frame);
     },
   };
 })();
@@ -552,35 +851,69 @@ function showApp(res) {
   loadStatus();
   loadDeploys();
   clearInterval(statusTimer);
-  statusTimer = setInterval(loadStatus, 30000);
+  statusTimer = setInterval(() => loadStatus(), 30000);
 }
 
 function skeleton() {
-  firstSites = true;
+  firstPaint = true;
   $("cards").replaceChildren(...STATES.map((s) => h("div", { class: "card", "data-state": s }, h("div", { class: "n", "data-n": 0 }, "0"), badge(s))));
-  $("sites").replaceChildren(...[0, 1, 2, 3].map(() => h("tr", {}, [18, 90, 80, 70, 30, 180, 30, 30, 200].map((wd) =>
-    h("td", {}, h("span", { class: "skel", style: `width:${wd}px` }))))));
+  $("matrix").replaceChildren(h("tbody", {}, [0, 1, 2, 3].map(() => h("tr", {}, [150, 90, 90, 90, 90].map((wd) =>
+    h("td", { style: "padding:14px 12px" }, h("span", { class: "skel", style: `width:${wd}px` })))))));
   $("deploys").replaceChildren(h("div", { class: "deploy" }, h("span", { class: "skel", style: "width:40%" }), h("span", { class: "skel", style: "width:70%" })));
+  legend();
 }
 
-// ---------- status ----------
-async function loadStatus() {
+function legend() {
+  const lg = (m, loss, label, socket) => h("span", { class: "lg" }, gem("api", { m, loss }, socket), label);
+  $("legend").replaceChildren(
+    lg("ok", 0, "Resonating: spins and hums at main"),
+    lg("behind", .5, "Fading: loses colour and slows with each commit behind"),
+    lg("drift", 1, `Drifting: over ${DRIFT} commits behind`),
+    lg("pending", 0, "Schema pending"),
+    lg("ahead", 0, "DB ahead"),
+    lg("down", .85, "Fallen to the floor: down, no ready pods or environment stopped", true),
+    h("span", { class: "lg" }, gem("api", { m: "behind", loss: .3, failed: true }), "Red dot: the last deploy failed"),
+    lg("unknown", 1, "Clouded: unknown"),
+    h("span", {}, "· Sapphire API, emerald worker, amethyst job. Click a gem to select it, a service or a mountain to select the line."));
+}
+
+// ---------- status: the matrix ----------
+// fresh skips the server's shared snapshot (up to 10s old): for Refresh and
+// right after deploys finish.
+async function loadStatus(fresh) {
   if (!me) return;
   $("refresh").disabled = true;
   try {
-    snap = await api("/api/status");
-    for (const name of [...selected]) if (!snap.sites.some((s) => s.name === name)) selected.delete(name);
+    snap = await api("/api/status" + (fresh ? "?fresh" : ""));
+    const keys = new Set(snap.cells.map(cellKey));
+    for (const k of [...selected]) if (!keys.has(k)) selected.delete(k);
     render();
   } catch (e) {
     if (e.status === 503) { // not configured yet
-      $("sites").replaceChildren(h("tr", {}, h("td", { colspan: 9, class: "empty" }, me.can_configure
-        ? "Nothing to align yet. Open Settings to connect GitLab and add sites."
-        : "Not configured yet. Ask a project Maintainer to set it up.")));
+      $("matrix").replaceChildren(h("tbody", {}, h("tr", {}, h("td", { class: "empty" }, me.can_configure
+        ? "Nothing to align yet: " + e.message.replace(/^not configured yet: /, "") + "."
+        : "Not configured yet. Ask a project Maintainer to set it up."))));
       if (me.can_configure && !$("settings").open) openSettings();
     } else if (e.status !== 401) toast("Status failed: " + e.message);
   } finally {
     $("refresh").disabled = false;
   }
+}
+
+const byKey = () => new Map(snap.cells.map((c) => [cellKey(c), c]));
+// selectable: worth deploying when picking "out of date" / whole lines. Jobs are one-off, down cells won't take a deploy.
+const stale = (c) => c.kind !== "job" && !["OK", "DOWN", "UNKNOWN"].includes(c.state);
+
+function cellLine(c) {
+  if (c.state === "DOWN" && c.pods && !c.pods.error) return c.pods.total ? `0/${c.pods.total} ready` : "no pods";
+  if (c.state === "DOWN") return c.source === "gitlab" ? "stopped" : "down";
+  if (c.state === "NEVER") return "never";
+  if (c.state === "UNKNOWN") return "unknown";
+  if (c.state === "DB_AHEAD") return `db +${c.schema.unknown.length}`;
+  if (c.state === "SCHEMA_PENDING") return `${c.schema.pending.length} pending`;
+  if (c.behind > 0) return `−${c.behind}`;
+  if (c.state === "OK") return "resonating";
+  return LABEL[c.state];
 }
 
 function render() {
@@ -590,63 +923,213 @@ function render() {
   $("checked").textContent = new Date(snap.checked_at).toLocaleTimeString();
 
   const counts = Object.fromEntries(STATES.map((s) => [s, 0]));
-  snap.sites.forEach((s) => counts[s.state]++);
+  snap.cells.forEach((c) => { if (c.state in counts) counts[c.state]++; });
   document.querySelectorAll("#cards .card").forEach((card) => countTo(card.querySelector(".n"), counts[card.dataset.state]));
 
-  const tbody = $("sites");
-  tbody.classList.toggle("fresh", firstSites);
-  firstSites = false;
-  tbody.replaceChildren(...snap.sites.map((s, i) => {
-    const sc = s.schema || {};
-    const detail = s.error || [
-      sc.pending?.length ? "pending: " + sc.pending.join(", ") : "",
-      sc.unknown?.length ? "unknown: " + sc.unknown.join(", ") : "",
-    ].filter(Boolean).join(" · ");
-    return h("tr", { style: `--i:${i}` },
-      h("td", {}, h("input", { type: "checkbox", checked: selected.has(s.name), "aria-label": "Select " + s.name,
-        onchange: (e) => { e.target.checked ? selected.add(s.name) : selected.delete(s.name); syncSelection(); } })),
-      h("td", {}, h("button", { class: "link", title: "Version history", onclick: () => showHistory(s.name) }, s.name)),
-      h("td", {}, badge(s.state)),
-      h("td", { class: "mono", title: s.commit || "" }, short(s.commit) || "–"),
-      h("td", {}, s.behind < 0 ? "?" : s.behind),
-      h("td", { class: "mono" }, sc.db || "–"),
-      h("td", {}, sc.pending ? sc.pending.length : "–"),
-      h("td", {}, sc.unknown ? sc.unknown.length : "–"),
-      h("td", { class: "detail" }, detail));
-  }));
+  const cells = byKey();
+  const q = $("filter").value.trim().toLowerCase();
+  const services = snap.services.filter((s) => !q || svcId(s).toLowerCase().includes(q));
+  const toggle = (keys) => {
+    const all = keys.length && keys.every((k) => selected.has(k));
+    keys.forEach((k) => (all ? selected.delete(k) : selected.add(k)));
+    render();
+  };
+  const colKeys = (site) => snap.cells.filter((c) => c.site === site && stale(c) && services.some((s) => s.name === c.service && (s.postfix || "") === (c.postfix || ""))).map(cellKey);
+
+  const head = h("thead", {}, h("tr", {},
+    h("th", { class: "corner" }, "Service"),
+    snap.sites.map((site) => {
+      const states = snap.cells.filter((c) => c.site === site).map((c) => c.state);
+      const worst = ["DB_AHEAD", "DOWN", "SCHEMA_PENDING", "BEHIND", "NEVER", "UNKNOWN"].find((s) => states.includes(s)) || "OK";
+      return h("th", {}, h("button", { class: "colhead", title: `Select every out-of-date service on ${site}`, onclick: () => toggle(colKeys(site)) },
+        h("b", {}, site), h("span", { class: "dots s-" + worst, style: "background:none;border:0" }, h("i"), h("i"), h("i"))));
+    })));
+
+  const pick = (k) => { selected.has(k) ? selected.delete(k) : selected.add(k); focusKey = k; render(); };
+  const sockets = new Map();
+  const body = h("tbody", { class: firstPaint ? "fresh" : "" });
+  let row = 0;
+  for (const kind of ["api", "worker", "job"]) {
+    const group = services.filter((s) => s.kind === kind);
+    if (!group.length) continue;
+    body.append(h("tr", { class: "group" }, h("th", { colspan: snap.sites.length + 1 }, KIND[kind])));
+    for (const s of group) {
+      const keys = snap.sites.map((site) => keyOf(site, s.name, s.postfix)).filter((k) => cells.has(k));
+      const rowKeys = keys.filter((k) => kind === "job" || stale(cells.get(k)));
+      body.append(h("tr", { style: `--i:${row++}` },
+        h("th", { class: "svc" }, h("button", { class: "rowhead", title: kind === "job" ? `Select ${svcId(s)} on every site` : `Select every out-of-date ${svcId(s)}`, onclick: () => toggle(rowKeys) },
+          h("span", { class: "nm" }, s.name), s.postfix ? h("span", { class: "pf" }, s.postfix) : null, h("span", { class: "kind" }, kind))),
+        snap.sites.map((site) => {
+          const c = cells.get(keyOf(site, s.name, s.postfix));
+          if (!c) return h("td", { class: "na", title: `${svcId(s)} doesn't run on ${site}` }, "·");
+          const k = cellKey(c), md = { ...mood(c), failed: !!c.failed_deploy };
+          const btn = h("button", {
+            class: `cellbtn m-${md.m}${selected.has(k) ? " sel" : ""}${focusKey === k ? " focus" : ""}`,
+            "aria-pressed": selected.has(k) ? "true" : "false",
+            "aria-label": `${svcId(s)} on ${site}: ${LABEL[c.state]}`,
+            title: [c.error || `${LABEL[c.state]}${c.commit ? " · " + short(c.commit) : ""}`, c.failed_deploy && `last deploy ${c.failed_deploy.status}`].filter(Boolean).join(" · "),
+            onclick: () => pick(k),
+          }, gem(c.kind, md, md.m === "down" || md.m === "never"), h("span", { class: "st" }, cellLine(c)));
+          sockets.set(k, btn);
+          return h("td", {}, btn);
+        })));
+    }
+  }
+  const foot = h("tfoot", {}, h("tr", { class: "floor" }, h("th", { class: "svc" }, "Floor"), snap.sites.map((site) => h("td", {}, h("div", { class: "rubble" },
+    services.map((s) => cells.get(keyOf(site, s.name, s.postfix))).filter((c) => c?.state === "DOWN").map((c) => {
+      const k = cellKey(c), name = c.service + (c.postfix || "");
+      return h("button", { class: `fallen${selected.has(k) ? " sel" : ""}${lastState.get(k) !== "DOWN" ? " dropping" : ""}`,
+        "data-key": k, "aria-pressed": selected.has(k) ? "true" : "false", "aria-label": `${name} on ${site}: Down`,
+        title: `${name} fell: down${c.error ? " · " + c.error : ""}`, onclick: () => pick(k) }, gem(c.kind, mood(c)), name);
+    }))))));
+  $("matrix").replaceChildren(head, body, foot);
+  snap.cells.forEach((c) => lastState.set(cellKey(c), c.state));
+  drawRange(sockets);
+  firstPaint = false;
+  inspect();
   syncSelection();
+}
+
+// drawRange raises one mountain behind each site's column, peak at the first
+// service, foot on the floor, and starts newly fallen gems from their socket.
+const lastState = new Map(); // cell key → state at the last render, so a gem drops once
+let rangeKey = ""; // what the range was last painted for: repainting ink filters on every click is slow
+function drawRange(sockets) {
+  const t = $("matrix"), range = $("range");
+  if (!t.tFoot) { range.replaceChildren(); rangeKey = ""; return; }
+  const top = t.tBodies[0].offsetTop, base = t.tFoot.offsetTop, tall = base - top;
+  const left = t.tHead.rows[0].cells[0].offsetWidth, W = t.offsetWidth, H = t.offsetHeight; // the service names stay clear of the range
+  const peaks = [...t.tHead.rows[0].cells].slice(1).map((th) => {
+    let n = 7; for (const ch of th.textContent) n = (n * 31 + ch.charCodeAt(0)) >>> 0; // a site keeps its silhouette
+    return { cx: th.offsetLeft + th.offsetWidth / 2, half: Math.max(th.offsetWidth * .9, tall * .42), n };
+  });
+  const key = JSON.stringify([gemStyle, W, H, top, base, left, peaks]);
+  if (key !== rangeKey) {
+    rangeKey = key;
+    const art = RANGES[gemStyle]({ W, H, top, base, tall, left, peaks });
+    typeof art === "string" ? (range.innerHTML = art) : range.replaceChildren(art);
+  }
+  t.tFoot.querySelectorAll(".fallen.dropping").forEach((b) => {
+    const from = sockets.get(b.dataset.key)?.querySelector(".gem").getBoundingClientRect(), to = b.querySelector(".gem").getBoundingClientRect();
+    if (from) b.style.cssText = `--dx:${from.left - to.left}px;--dy:${from.top - to.top}px`;
+  });
+}
+new ResizeObserver(() => snap && drawRange(new Map())).observe($("matrix"));
+
+const jag = (n, k) => ((n >> (k * 4)) & 15) / 15 - .5; // a site's own unevenness, from its name
+const RANGES = {
+  // pixel: stepped peaks with snow caps under a starry sky, drawn at a third of the size and scaled up
+  pixel({ W, H, top, base, left, peaks }) {
+    const S = 3, c = document.createElement("canvas");
+    c.width = Math.ceil(W / S); c.height = Math.ceil(H / S);
+    c.style.cssText = `width:${c.width * S}px;height:${c.height * S}px;image-rendering:pixelated`;
+    const g = c.getContext("2d"), t0 = Math.floor(top / S), b0 = Math.floor(base / S), l0 = Math.ceil(left / S);
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < c.width * (b0 - t0) / 260; i++) {
+      g.fillStyle = rnd() > .7 ? "#fff" : "#8b93c9";
+      g.fillRect(l0 + Math.floor(rnd() * (c.width - l0)), t0 + Math.floor(rnd() * (b0 - t0)), 1, 1);
+    }
+    for (const { cx: px, half, n } of peaks) {
+      const cx = Math.round(px / S), hw = Math.round(half / S), pk = t0 + 1 + (n & 3), snowLine = pk + (b0 - pk) * .12;
+      for (let x = Math.max(l0, cx - hw); x <= Math.min(c.width, cx + hw); x++) {
+        const dist = Math.abs(x - cx), ridge = Math.round(pk + dist * (b0 - pk) / hw + ((x * 7 + n) % 5 === 0 ? 1 : 0)), lit = x < cx;
+        for (let y = ridge; y < b0; y++) {
+          g.fillStyle = y < snowLine && y < ridge + 3 ? (lit ? "#e8ecff" : "#aab2e0")
+            : y === ridge ? (lit ? "#6a5f8f" : "#3a3360")
+            : (x + y) % 2 && y > b0 - (b0 - pk) * .25 ? "#231d3d" : lit ? "#4a4170" : "#2e2850";
+          g.fillRect(x, y, 1, 1);
+        }
+      }
+    }
+    return c;
+  },
+
+  // ink: misty far ridges, a vermilion sun, and one washed peak per site fading into the mist at its foot
+  ink({ W, H, top, base, tall, left, peaks }) {
+    const ridge = (cx, half, n, peakY) => {
+      let d = `M${(cx - half).toFixed(0)} ${base}`;
+      for (let i = 0; i <= 48; i++) {
+        const u = i / 24 - 1;
+        const y = peakY + (base - peakY) * (Math.pow(Math.abs(u), 1.3) * .92 + Math.sin(u * 9 + n % 7) * .025 + Math.sin(u * 21 + (n >> 3) % 5) * .012);
+        d += ` L${(cx + half * u).toFixed(0)} ${Math.min(base, y).toFixed(0)}`;
+      }
+      return `${d} L${(cx + half).toFixed(0)} ${base} Z`;
+    };
+    const far = peaks.slice(1).map((p, i) => ridge((p.cx + peaks[i].cx) / 2, p.half * 1.25, p.n >> 5, top + tall * .02));
+    const near = peaks.map(({ cx, half, n }) => ridge(cx, half, n, top + 4));
+    const sun = peaks.length > 1 ? (peaks.at(-1).cx + peaks.at(-2).cx) / 2 : peaks[0].cx + 70;
+    return `<svg width="${W}" height="${H}"><defs>
+        <filter id="ink-mist" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><feTurbulence type="fractalNoise" baseFrequency=".012 .05" numOctaves="4" seed="5"/><feDisplacementMap in="SourceGraphic" scale="26"/><feGaussianBlur stdDeviation="1.6"/></filter>
+        <filter id="ink-wash" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"><feTurbulence type="fractalNoise" baseFrequency=".05" numOctaves="3" seed="11"/><feDisplacementMap in="SourceGraphic" scale="10"/><feGaussianBlur stdDeviation="2.2"/></filter>
+        <linearGradient id="ink-far" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5b5146" stop-opacity=".3"/><stop offset=".6" stop-color="#5b5146" stop-opacity="0"/></linearGradient>
+        <linearGradient id="ink-near" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#14110d" stop-opacity=".42"/><stop offset=".4" stop-color="#14110d" stop-opacity=".09"/><stop offset="1" stop-color="#14110d" stop-opacity=".02"/></linearGradient>
+        <clipPath id="ink-sky"><rect x="${left}" y="0" width="${W}" height="${H}"/></clipPath></defs>
+      <g clip-path="url(#ink-sky)">
+        ${far.map((d) => `<path d="${d}" fill="url(#ink-far)" filter="url(#ink-mist)"/>`).join("")}
+        <circle cx="${sun.toFixed(0)}" cy="${(top + Math.min(60, tall * .1)).toFixed(0)}" r="18" fill="#b8322a" opacity=".78" filter="url(#ink-wash)"/>
+        ${near.map((d) => `<path d="${d}" fill="url(#ink-near)" filter="url(#ink-wash)"/>`).join("")}
+      </g></svg>`;
+  },
+};
+
+function inspect() {
+  const c = focusKey && byKey().get(focusKey);
+  $("inspector").hidden = !c;
+  if (!c) return;
+  const sc = c.schema;
+  const rows = [
+    ["State", badge(c.state)],
+    ["Commit", c.commit ? h("span", { class: "mono" }, c.commit) : "—"],
+    ["Behind", c.behind < 0 ? "?" : c.behind === 0 ? "at head" : `${c.behind} commit${c.behind > 1 ? "s" : ""}`],
+    ["Source", c.source === "version" ? "live /version" : "GitLab deployment"],
+    c.deployed_at ? ["Deployed", when(c.deployed_at)] : null,
+    c.pipeline_url ? ["Pipeline", h("a", { href: c.pipeline_url, target: "_blank", rel: "noopener" }, "open")] : null,
+    c.pods ? ["Pods", c.pods.error ? h("span", { style: "color:var(--warn)", title: c.pods.error }, "couldn't read: " + c.pods.error)
+      : `${c.pods.ready} of ${c.pods.total} ready`] : null,
+    c.failed_deploy ? ["Last deploy", h("span", { style: "color:var(--bad)" }, `${c.failed_deploy.status} · ${short(c.failed_deploy.sha)} · ${when(c.failed_deploy.at)} `,
+      c.failed_deploy.pipeline_url ? h("a", { href: c.failed_deploy.pipeline_url, target: "_blank", rel: "noopener" }, "pipeline") : null)] : null,
+    sc ? ["Schema", h("span", { class: "mono" }, sc.db || "—")] : null,
+    sc?.pending?.length ? ["Pending", h("ul", {}, sc.pending.map((m) => h("li", {}, m)))] : null,
+    sc?.unknown?.length ? ["Unknown", h("ul", {}, sc.unknown.map((m) => h("li", {}, m)))] : null,
+    c.error ? ["Error", h("span", { style: "color:var(--bad)" }, c.error)] : null,
+  ].filter(Boolean);
+  $("inspector").replaceChildren(
+    h("button", { class: "close", "aria-label": "Close", onclick: () => { focusKey = null; render(); } }, "×"),
+    h("h3", {}, c.service, c.postfix ? h("span", { style: "color:var(--gold-hi);font-style:italic" }, c.postfix) : null, h("small", {}, `${c.site} · ${c.kind}`)),
+    h("dl", {}, rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])),
+    h("div", {}, h("button", { onclick: () => showHistory(c) }, "Version history")));
 }
 
 function syncSelection() {
   const n = selected.size;
   $("deploy").disabled = n === 0 || !snap;
-  $("deploy").textContent = n ? `Deploy ${short(snap?.head)} to ${n} site${n > 1 ? "s" : ""}` : "Deploy";
-  $("all").checked = !!snap && snap.sites.length > 0 && n === snap.sites.length;
+  $("deploy").textContent = n ? `Deploy ${short(snap?.head)} · ${n} pipeline${n > 1 ? "s" : ""}` : "Deploy";
 }
 
-$("all").onchange = (e) => {
-  snap?.sites.forEach((s) => (e.target.checked ? selected.add(s.name) : selected.delete(s.name)));
-  if (snap) render();
-};
-$("select-stale").onclick = () => {
-  snap?.sites.forEach((s) => s.state !== "OK" && s.state !== "DOWN" && selected.add(s.name));
-  if (snap) render();
-};
+$("filter").oninput = () => snap && render();
+gemSwitch();
+$("select-stale").onclick = () => { snap?.cells.forEach((c) => stale(c) && selected.add(cellKey(c))); if (snap) render(); };
 $("select-none").onclick = () => { selected.clear(); if (snap) render(); };
-$("refresh").onclick = () => { loadStatus(); loadDeploys(); };
+$("refresh").onclick = () => { loadStatus(true); loadDeploys(); };
 
 // ---------- deploy ----------
 $("deploy").onclick = () => {
-  const sites = snap.sites.filter((s) => selected.has(s.name));
-  const risky = sites.filter((s) => s.state === "DB_AHEAD" || s.state === "DOWN");
-  $("confirm-title").textContent = `Deploy ${snap.branch}@${short(snap.head)} to ${sites.length} site${sites.length > 1 ? "s" : ""}?`;
+  const cells = byKey();
+  const picked = [...selected].map((k) => cells.get(k)).filter(Boolean);
+  const risky = picked.filter((c) => c.state === "DB_AHEAD" || c.state === "DOWN");
+  const jobs = picked.filter((c) => c.kind === "job");
+  const sites = [...new Set(picked.map((c) => c.site))];
+  $("confirm-title").textContent = `Deploy ${snap.branch}@${short(snap.head)}: ${picked.length} pipeline${picked.length > 1 ? "s" : ""} on ${sites.length} site${sites.length > 1 ? "s" : ""}?`;
   $("confirm-body").replaceChildren(...[
-    h("div", { class: "hint" }, "Each site gets its own GitLab pipeline: migrate the database, then roll out, all pinned to ",
-      h("span", { class: "mono" }, snap.head), me.user.id ? `. Pipelines run as ${me.user.username}.` : "."),
-    h("ul", {}, sites.map((s) => h("li", {}, badge(s.state, `${s.name} · ${LABEL[s.state]}`)))),
-    risky.length ? h("div", { class: "warnbox" },
-      "Check first: ", risky.map((s) => `${s.name} is ${LABEL[s.state]}`).join(", "),
-      ". A DB-ahead site was migrated by a newer build; a down site's pipeline will likely fail.") : null,
+    h("div", { class: "hint" }, "One GitLab pipeline per service per site, each on ", h("span", { class: "mono" }, snap.branch),
+      " at ", h("span", { class: "mono" }, snap.head), me.user.id ? `. Pipelines run as ${me.user.username}.` : "."),
+    h("div", { class: "plan" }, sites.map((site) => h("div", { class: "site" }, h("b", {}, site),
+      picked.filter((c) => c.site === site).map((c) => badge(c.state, c.service + (c.postfix || "")))))),
+    risky.length ? h("div", { class: "warnbox" }, "Check first: ",
+      risky.map((c) => `${c.service}${c.postfix || ""} on ${c.site} is ${LABEL[c.state]}`).join(", "),
+      ". A DB-ahead API was migrated by a newer build; a down API's deploy will likely fail, a down worker's may bring it back.") : null,
+    jobs.length ? h("div", { class: "warnbox" }, `${jobs.length} job${jobs.length > 1 ? "s" : ""} selected: a job runs once when deployed.`) : null,
   ].filter(Boolean));
   $("confirm").returnValue = "";
   $("confirm").showModal();
@@ -654,13 +1137,15 @@ $("deploy").onclick = () => {
 
 $("confirm").addEventListener("close", async () => {
   if ($("confirm").returnValue !== "ok") return;
+  const cells = byKey();
+  const targets = [...selected].map((k) => cells.get(k)).filter(Boolean).map((c) => ({ site: c.site, service: c.service, postfix: c.postfix || "" }));
   try {
     const res = await api("/api/deploys", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sites: [...selected], sha: snap.head }),
+      body: JSON.stringify({ targets, sha: snap.head }),
     });
-    const refused = res.deploy.runs.filter((r) => r.error).length;
+    const refused = res.deploy.runs.filter((r) => r.status === "error").length;
     toast(res.warning || (refused ? `${refused} of ${res.deploy.runs.length} pipeline(s) refused by GitLab` : `Triggered ${res.deploy.runs.length} pipeline(s)`));
     selected.clear();
     render();
@@ -668,7 +1153,7 @@ $("confirm").addEventListener("close", async () => {
   } catch (e) {
     if (e.status === 401) return;
     toast(e.status === 409 ? "Main moved since you looked. Refreshed; review and confirm again." : "Deploy failed: " + e.message);
-    if (e.status === 409) loadStatus();
+    if (e.status === 409) loadStatus(true);
   }
 });
 
@@ -679,18 +1164,27 @@ async function loadDeploys() {
   try {
     const list = await api("/api/deploys");
     busy = list.some((d) => d.runs.some((r) => ACTIVE.has(r.status)));
-    $("deploys").replaceChildren(...(list.length ? list.map((d) => {
-      const left = d.runs.filter((r) => ACTIVE.has(r.status)).length;
+    $("deploys").replaceChildren(...(list.length ? list.map((d, i) => {
+      const tally = {};
+      d.runs.forEach((r) => (tally[r.status] = (tally[r.status] || 0) + 1));
+      const sites = [...new Set(d.runs.map((r) => r.site))];
+      const live = d.runs.some((r) => ACTIVE.has(r.status) || r.status === "failed" || r.status === "error");
       return h("div", { class: "deploy" },
         h("div", { class: "head" },
           h("b", {}, when(d.at)), h("span", {}, "by " + d.by),
           h("span", { class: "mono", title: d.sha }, d.branch + "@" + short(d.sha)),
-          left ? badge("running", `${left} running`) : h("span", {}, "finished")),
-        h("div", { class: "runs" }, d.runs.map((r) => r.web_url
-          ? h("a", { href: r.web_url, target: "_blank", rel: "noopener", title: r.error || "" }, badge(r.status, `${r.site} · ${r.status}`))
-          : h("span", { title: r.error || "" }, badge(r.status, `${r.site} · ${r.status}`)))));
+          Object.entries(tally).map(([s, n]) => badge(s, `${n} ${s}`))),
+        h("details", { open: i === 0 && live ? true : null },
+          h("summary", {}, `${d.runs.length} pipeline${d.runs.length > 1 ? "s" : ""} on ${sites.length} site${sites.length > 1 ? "s" : ""}`),
+          h("div", { class: "runs" }, sites.map((site) => h("div", { class: "site" }, h("b", {}, site),
+            d.runs.filter((r) => r.site === site).map((r) => {
+              const label = `${r.service}${r.postfix || ""} · ${r.status}`;
+              return r.web_url
+                ? h("a", { href: r.web_url, target: "_blank", rel: "noopener", title: r.error || "" }, badge(r.status, label))
+                : h("span", { title: r.error || "" }, badge(r.status, label));
+            }))))));
     }) : [h("div", { class: "empty" }, "No deploys yet.")]));
-    if (wasBusy && !busy) loadStatus(); // pipelines just finished: show the new versions
+    if (wasBusy && !busy) loadStatus(true); // pipelines just finished: show the new versions
     wasBusy = busy;
   } catch (e) {
     if (e.status === 401) return;
@@ -699,15 +1193,16 @@ async function loadDeploys() {
   deployTimer = setTimeout(loadDeploys, busy ? 3000 : 30000);
 }
 
-async function showHistory(site) {
-  $("history-title").textContent = site;
+async function showHistory(c) {
+  $("history-title").textContent = `${c.service}${c.postfix || ""} on ${c.site}`;
   $("history-body").replaceChildren(h("div", { style: "display:grid;gap:10px;padding:8px 0" },
     [70, 55, 62].map((p) => h("span", { class: "skel", style: `width:${p}%` }))));
   $("history").showModal();
   try {
-    const rows = await api(`/api/sites/${encodeURIComponent(site)}/versions`);
+    const q = new URLSearchParams({ site: c.site, service: c.service, postfix: c.postfix || "" });
+    const rows = await api(`/api/versions?${q}`);
     $("history-body").replaceChildren(rows.length ? h("table", {},
-      h("thead", {}, h("tr", {}, ["Seen", "State", "Commit", "Schema (DB)", "Migrations"].map((t) => h("th", {}, t)))),
+      h("thead", {}, h("tr", {}, ["Seen", "State", "Commit", "Schema (DB)", "Detail"].map((t) => h("th", {}, t)))),
       h("tbody", { class: "fresh" }, rows.map((r, i) => h("tr", { style: `--i:${i}` },
         h("td", {}, when(r.observed_at)), h("td", {}, badge(r.state)),
         h("td", { class: "mono", title: r.commit }, short(r.commit) || "–"),
@@ -715,18 +1210,29 @@ async function showHistory(site) {
         h("td", { class: "detail" }, [
           r.pending.length ? "pending: " + r.pending.join(", ") : "",
           r.unknown.length ? "unknown: " + r.unknown.join(", ") : "",
-        ].filter(Boolean).join(" · ") || r.error || "–"))))) : h("div", { class: "empty" }, "No changes recorded yet."));
+        ].filter(Boolean).join(" · ") || r.error || (r.source === "gitlab" ? "from GitLab deployment" : "–")))))) : h("div", { class: "empty" }, "No changes recorded yet."));
   } catch (e) {
     $("history-body").replaceChildren(h("div", { class: "empty" }, "Failed: " + e.message));
   }
 }
 
 // ---------- settings ----------
-function siteRow(site = { name: "", version_url: "" }) {
+function siteRow(site = { name: "", version_url: "", agent_id: 0 }) {
   const row = h("div", { class: "siterow" },
     h("input", { type: "text", "aria-label": "Site name", placeholder: "site-a", value: site.name, required: true, pattern: "[A-Za-z0-9_\\-]{1,64}" }),
-    h("input", { type: "url", "aria-label": "Version URL", placeholder: "https://site-a.example.com/version", value: site.version_url, required: true }),
+    h("input", { type: "text", "aria-label": "Version URL template", placeholder: "https://{site}.example.com/{service}{postfix}/version", value: site.version_url }),
+    h("input", { type: "number", "aria-label": "GitLab agent ID", placeholder: "none", min: 0, step: 1, value: site.agent_id || "" }),
     h("button", { type: "button", class: "icon", title: "Remove", "aria-label": "Remove site", onclick: () => row.remove() }, "✕"));
+  return row;
+}
+function svcRow(s = { name: "", postfix: "", kind: "api", sites: [] }) {
+  const kind = h("select", { "aria-label": "Kind" }, ["api", "worker", "job"].map((k) => h("option", { value: k, selected: k === s.kind }, k)));
+  const row = h("div", { class: "svcrow" },
+    h("input", { type: "text", "aria-label": "Service name", placeholder: "api-orders", value: s.name, required: true, pattern: "[A-Za-z0-9_\\-]{1,64}" }),
+    h("input", { type: "text", "aria-label": "Postfix", placeholder: "-variant", value: s.postfix || "", pattern: "[A-Za-z0-9_.\\-]{0,32}" }),
+    kind,
+    h("input", { type: "text", "aria-label": "Sites", placeholder: "every site", value: (s.sites || []).join(", ") }),
+    h("button", { type: "button", class: "icon", title: "Remove", "aria-label": "Remove service", onclick: () => row.remove() }, "✕"));
   return row;
 }
 
@@ -738,13 +1244,19 @@ async function openSettings() {
     f.url.value = c.gitlab.url; f.project.value = c.gitlab.project; f.branch.value = c.gitlab.branch;
     f.poll.value = c.poll_seconds; f.vtoken.value = "";
     f.vtoken.placeholder = c.version_token_set ? "set · leave blank to keep" : "not set";
+    f.trigger_as.value = c.trigger_as || "inputs";
+    f.env.value = c.environment_template; f.api_env.value = c.api_environment_template;
+    f.inputs.value = Object.entries(c.pipeline_inputs || {}).map(([k, v]) => `${k}=${v}`).join("\n");
     f.redirect.value = c.redirect_uri;
+    f.pod_ns.value = c.kubernetes.namespace; f.pod_sel.value = c.kubernetes.selector; f.k8s_proxy.value = c.kubernetes.proxy_url;
+    f.k8s_proxy.placeholder = /^https?:\/\/gitlab\.com\/?$/.test(c.gitlab.url) ? "https://kas.gitlab.com/k8s-proxy" : `${(c.gitlab.url || "https://gitlab.example.com").replace(/\/+$/, "")}/-/kubernetes-agent/k8s-proxy`;
     f.oauth_id.value = c.oauth_client_id; f.oauth_secret.value = "";
     f.oauth_secret.placeholder = c.oauth_secret_set ? "set · leave blank to keep" : "not set";
     openSettings.secretSet = c.oauth_secret_set;
     f.user.value = c.admin_user; f.password.value = "";
     $("fallback").hidden = me.user.id !== 0; // only matters while GitLab sign-in is off
     $("site-rows").replaceChildren(...(c.sites.length ? c.sites : [undefined]).map(siteRow));
+    $("svc-rows").replaceChildren(...(c.services.length ? c.services : [undefined]).map(svcRow));
     $("settings").showModal();
   } catch (e) {
     if (e.status !== 401) toast("Settings failed: " + e.message);
@@ -753,18 +1265,60 @@ async function openSettings() {
 
 $("open-settings").onclick = openSettings;
 $("add-site").onclick = () => { const r = siteRow(); $("site-rows").append(r); r.querySelector("input").focus(); };
+$("add-svc").onclick = () => { const r = svcRow(); $("svc-rows").append(r); r.querySelector("input").focus(); };
 $("settings-cancel").onclick = () => $("settings").close();
 $("copy-redirect").onclick = async () => {
   try { await navigator.clipboard.writeText($("settings-form").redirect.value); toast("Redirect URI copied"); }
   catch { $("settings-form").redirect.select(); }
 };
+// Info tips: hover to peek, click to pin; Esc or a click elsewhere closes.
+document.querySelectorAll(".info").forEach((btn) => {
+  const tip = h("div", { popover: "auto", class: "tip" }, btn.dataset.tip);
+  let pinned = false;
+  btn.closest("dialog").append(tip);
+  btn.popoverTargetElement = tip;
+  btn.setAttribute("aria-label", `About ${btn.parentElement.firstChild.textContent.trim()}`);
+  btn.onmouseenter = () => { if (!tip.matches(":popover-open")) tip.showPopover(); };
+  btn.onmouseleave = () => { if (!pinned && tip.matches(":popover-open")) tip.hidePopover(); };
+  btn.onclick = (e) => {
+    if (tip.matches(":popover-open") && !pinned) e.preventDefault(); // opened by hover: keep it open
+    pinned = true;
+  };
+  tip.addEventListener("beforetoggle", (e) => {
+    if (e.newState !== "open") { pinned = false; return; }
+    const r = btn.getBoundingClientRect(), w = Math.min(320, innerWidth - 32), below = r.bottom < innerHeight * .6;
+    Object.assign(tip.style, { width: w + "px", left: Math.max(16, Math.min(r.left + r.width / 2 - w / 2, innerWidth - w - 16)) + "px",
+      top: below ? r.bottom + 8 + "px" : "auto", bottom: below ? "auto" : innerHeight - r.top + 8 + "px" });
+  });
+});
+const hideTips = () => document.querySelectorAll(".tip:popover-open").forEach((t) => t.hidePopover());
+document.querySelector("#settings .body").addEventListener("scroll", hideTips); // tips are placed once, so don't let them drift
+$("settings").addEventListener("close", hideTips);
+
+// filled returns the editor rows the user typed into; untouched blank rows
+// (like the one shown on first setup) are not sent.
+const filled = (id) => [...$(id).children].filter((r) => [...r.querySelectorAll("input")].some((i) => i.value.trim()));
+
 $("settings-form").onsubmit = async (ev) => {
   ev.preventDefault();
   const f = ev.target;
+  const inputs = {};
+  for (const line of f.inputs.value.split("\n")) {
+    const i = line.indexOf("=");
+    if (line.trim() && i < 1) { $("settings-err").textContent = `Pipeline input "${line.trim()}" needs KEY=value`; return; }
+    if (i > 0) inputs[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  }
   const body = {
     gitlab: { url: f.url.value, project: f.project.value, branch: f.branch.value },
     poll_seconds: Number(f.poll.value),
-    sites: [...$("site-rows").children].map((r) => ({ name: r.children[0].value, version_url: r.children[1].value })),
+    trigger_as: f.trigger_as.value, environment_template: f.env.value, api_environment_template: f.api_env.value,
+    pipeline_inputs: inputs,
+    sites: filled("site-rows").map((r) => ({ name: r.children[0].value, version_url: r.children[1].value, agent_id: Number(r.children[2].value) || 0 })),
+    kubernetes: { proxy_url: f.k8s_proxy.value, namespace: f.pod_ns.value, selector: f.pod_sel.value },
+    services: filled("svc-rows").map((r) => ({
+      name: r.children[0].value, postfix: r.children[1].value, kind: r.children[2].value,
+      sites: r.children[3].value.split(",").map((x) => x.trim()).filter(Boolean),
+    })),
     oauth_client_id: f.oauth_id.value,
   };
   if (f.vtoken.value) body.version_token = f.vtoken.value;

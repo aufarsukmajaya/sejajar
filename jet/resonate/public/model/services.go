@@ -7,7 +7,9 @@
 
 package model
 
-type Sites struct {
-	Name       string `sql:"primary_key"`
-	VersionURL string
+type Services struct {
+	Name    string `sql:"primary_key"`
+	Postfix string `sql:"primary_key"`
+	Kind    string
+	Sites   string
 }

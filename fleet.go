@@ -5,26 +5,104 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 )
 
+// Config is everything the dashboard's Settings edit. The fleet is a matrix:
+// sites are the columns, services the rows.
 type Config struct {
 	GitLab struct {
 		URL     string `json:"url"`     // https://gitlab.example.com
 		Project string `json:"project"` // group/app (path or numeric id)
 		Branch  string `json:"branch"`  // main
 	} `json:"gitlab"`
-	Sites         []Site `json:"sites"`
+	Sites    []Site    `json:"sites"`
+	Services []Service `json:"services"`
+
+	// The GitLab environment a deploy job records, so workers and jobs (which
+	// expose no API) can be tracked by their last successful deployment.
+	EnvironmentTemplate    string `json:"environment_template"`
+	APIEnvironmentTemplate string `json:"api_environment_template"` // "" = EnvironmentTemplate
+
+	// What each deploy pipeline is given; values are templates.
+	PipelineInputs map[string]string `json:"pipeline_inputs"`
+	TriggerAs      string            `json:"trigger_as"` // "inputs" (spec:inputs) or "variables"
+
+	// Pods are read through the GitLab agent for Kubernetes, for cells read
+	// from GitLab deployments (workers, and APIs without a /version), on
+	// sites that name their agent.
+	Kubernetes struct {
+		ProxyURL  string `json:"proxy_url"` // "" = derived from the GitLab URL
+		Namespace string `json:"namespace"` // template
+		Selector  string `json:"selector"`  // label selector template
+	} `json:"kubernetes"`
+
 	PollSeconds   int    `json:"poll_seconds"`
 	VersionToken  string `json:"-"` // write-only through the API
 	OAuthClientID string `json:"oauth_client_id"`
 	OAuthSecret   string `json:"-"` // write-only through the API
+}
+
+// Site is a column. VersionURL is a template for its APIs' /version, e.g.
+// https://{site}.example.com/{service}{postfix}/version; "" when they expose none.
+// AgentID is the GitLab agent for Kubernetes in its cluster; 0 = no pod checks.
+type Site struct {
+	Name       string `json:"name"`
+	VersionURL string `json:"version_url"`
+	AgentID    int64  `json:"agent_id,omitempty"`
+}
+
+// Service is a row. A postfix is a separately deployed variant of the same
+// service; Sites limits where it runs (empty = every site).
+type Service struct {
+	Name    string   `json:"name"`
+	Postfix string   `json:"postfix"`
+	Kind    string   `json:"kind"` // api, worker or job
+	Sites   []string `json:"sites"`
+}
+
+func (s Service) ID() string { return s.Name + s.Postfix }
+
+func (s Service) runsOn(site string) bool { return len(s.Sites) == 0 || slices.Contains(s.Sites, site) }
+
+var kinds = []string{"api", "worker", "job"}
+
+// defaultInputs is what a deploy pipeline gets when Settings name none.
+func defaultInputs() map[string]string {
+	return map[string]string{"SITE": "{site}", "SERVICE": "{service}", "POSTFIX": "{postfix}", "DEPLOY_SHA": "{sha}"}
+}
+
+// expand fills a template's {site}, {service} and {postfix}. Deploy also
+// fills {sha} in pipeline inputs.
+func expand(tmpl, site string, svc Service) string {
+	return strings.NewReplacer("{site}", site, "{service}", svc.Name, "{postfix}", svc.Postfix).Replace(tmpl)
+}
+
+// k8sProxy is the agent's Kubernetes API proxy: kas.gitlab.com on GitLab.com,
+// a path on the instance when self-managed, unless Settings name another.
+func (c *Config) k8sProxy() string {
+	if c.Kubernetes.ProxyURL != "" {
+		return strings.TrimRight(c.Kubernetes.ProxyURL, "/")
+	}
+	if u, err := url.Parse(c.GitLab.URL); err == nil && u.Host == "gitlab.com" {
+		return "https://kas.gitlab.com/k8s-proxy"
+	}
+	return strings.TrimRight(c.GitLab.URL, "/") + "/-/kubernetes-agent/k8s-proxy"
+}
+
+func (c *Config) environment(site string, svc Service) string {
+	if svc.Kind == "api" && c.APIEnvironmentTemplate != "" {
+		return expand(c.APIEnvironmentTemplate, site, svc)
+	}
+	return expand(c.EnvironmentTemplate, site, svc)
 }
 
 // gitlabLogin reports whether GitLab sign-in is set up; until then the local
@@ -33,53 +111,186 @@ func (c *Config) gitlabLogin() bool {
 	return c.GitLab.URL != "" && c.OAuthClientID != "" && c.OAuthSecret != ""
 }
 
-// ErrNotConfigured means GitLab or the site list hasn't been set up yet.
-var ErrNotConfigured = errors.New("not configured yet: open Settings and set GitLab and the sites")
+// ErrNotConfigured means GitLab, the sites or the services aren't set up yet.
+var ErrNotConfigured = errors.New("not configured yet")
 
-func (c *Config) ready() bool {
-	return c.GitLab.URL != "" && c.GitLab.Project != "" && c.GitLab.Branch != "" && len(c.Sites) > 0
+// missing names what Settings still needs before anything can be checked.
+func (c *Config) missing() []string {
+	var m []string
+	for _, f := range []struct {
+		name string
+		ok   bool
+	}{
+		{"the GitLab URL", c.GitLab.URL != ""},
+		{"the GitLab project", c.GitLab.Project != ""},
+		{"the branch", c.GitLab.Branch != ""},
+		{"a site", len(c.Sites) > 0},
+		{"a service", len(c.Services) > 0},
+	} {
+		if !f.ok {
+			m = append(m, f.name)
+		}
+	}
+	return m
 }
 
-// validate checks a config before it is saved.
+var (
+	nameRe    = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+	postfixRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{0,32}$`)
+	inputRe   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
+)
+
+// validate normalises and checks a config before it is saved.
 func (c *Config) validate() error {
 	c.GitLab.URL = strings.TrimSpace(c.GitLab.URL)
 	c.GitLab.Project, c.GitLab.Branch = strings.TrimSpace(c.GitLab.Project), strings.TrimSpace(c.GitLab.Branch)
 	c.OAuthClientID = strings.TrimSpace(c.OAuthClientID)
+	c.EnvironmentTemplate = strings.TrimSpace(c.EnvironmentTemplate)
+	c.APIEnvironmentTemplate = strings.TrimSpace(c.APIEnvironmentTemplate)
+	k := &c.Kubernetes
+	k.ProxyURL, k.Namespace, k.Selector = strings.TrimSpace(k.ProxyURL), strings.TrimSpace(k.Namespace), strings.TrimSpace(k.Selector)
+	if k.Selector == "" {
+		k.Selector = "app={service}{postfix}"
+	}
+	if k.ProxyURL != "" && !isHTTP(k.ProxyURL) {
+		return errors.New("kubernetes proxy url must be http(s)://...")
+	}
 	if c.GitLab.URL != "" && !isHTTP(c.GitLab.URL) {
-		return fmt.Errorf("gitlab url must be http(s)://...")
+		return errors.New("gitlab url must be http(s)://...")
 	}
 	if c.PollSeconds < 10 {
-		return fmt.Errorf("poll_seconds must be at least 10")
+		return errors.New("poll_seconds must be at least 10")
 	}
-	seen := map[string]bool{}
+	if c.EnvironmentTemplate == "" {
+		c.EnvironmentTemplate = "{site}-{service}{postfix}"
+	}
+	if c.TriggerAs == "" {
+		c.TriggerAs = "inputs"
+	}
+	if c.TriggerAs != "inputs" && c.TriggerAs != "variables" {
+		return errors.New(`trigger_as must be "inputs" or "variables"`)
+	}
+	if c.PipelineInputs == nil {
+		c.PipelineInputs = defaultInputs()
+	}
+	if len(c.PipelineInputs) > 30 {
+		return errors.New("at most 30 pipeline inputs")
+	}
+	for k, v := range c.PipelineInputs {
+		if !inputRe.MatchString(k) {
+			return fmt.Errorf("pipeline input %q: name must be letters, digits or '_'", k)
+		}
+		if len(v) > 256 {
+			return fmt.Errorf("pipeline input %q: value too long", k)
+		}
+	}
+
+	sites := map[string]bool{}
 	for i := range c.Sites {
 		s := &c.Sites[i]
 		s.Name, s.VersionURL = strings.TrimSpace(s.Name), strings.TrimSpace(s.VersionURL)
-		if !siteName.MatchString(s.Name) {
-			return fmt.Errorf("site %q: name must be letters, digits, '-' or '_' (it is the GitLab environment)", s.Name)
+		if !nameRe.MatchString(s.Name) {
+			return fmt.Errorf("site %q: name must be letters, digits, '-' or '_'", s.Name)
 		}
-		if seen[s.Name] {
+		if sites[s.Name] {
 			return fmt.Errorf("site %q is listed twice", s.Name)
 		}
-		seen[s.Name] = true
-		if !isHTTP(s.VersionURL) {
-			return fmt.Errorf("site %q: version url must be http(s)://...", s.Name)
+		sites[s.Name] = true
+		if s.VersionURL != "" && !isHTTP(expand(s.VersionURL, s.Name, Service{Name: "svc"})) {
+			return fmt.Errorf("site %q: version url must be http(s)://... (placeholders {site} {service} {postfix})", s.Name)
+		}
+		if s.AgentID < 0 {
+			return fmt.Errorf("site %q: agent id must be a GitLab agent's id, or 0 for none", s.Name)
+		}
+	}
+	ids := map[string]bool{}
+	for i := range c.Services {
+		s := &c.Services[i]
+		s.Name, s.Postfix, s.Kind = strings.TrimSpace(s.Name), strings.TrimSpace(s.Postfix), strings.TrimSpace(s.Kind)
+		if !nameRe.MatchString(s.Name) {
+			return fmt.Errorf("service %q: name must be letters, digits, '-' or '_'", s.Name)
+		}
+		if !postfixRe.MatchString(s.Postfix) {
+			return fmt.Errorf("service %s: postfix must be letters, digits, '-', '_' or '.'", s.ID())
+		}
+		if !slices.Contains(kinds, s.Kind) {
+			return fmt.Errorf("service %s: kind must be api, worker or job", s.ID())
+		}
+		// name+postfix names the deployment, so it must be unique on its own.
+		if ids[s.ID()] {
+			return fmt.Errorf("service %s is listed twice", s.ID())
+		}
+		ids[s.ID()] = true
+		for _, site := range s.Sites {
+			if !sites[site] {
+				return fmt.Errorf("service %s: unknown site %q", s.ID(), site)
+			}
+		}
+	}
+	return c.validateTemplates()
+}
+
+// validateTemplates checks that the templates tell cells apart; otherwise two
+// cells would share a pipeline, a GitLab environment or a /version, and one
+// would silently stand in for the other.
+func (c *Config) validateTemplates() error {
+	postfix := func(svcs []Service) bool {
+		return slices.ContainsFunc(svcs, func(s Service) bool { return s.Postfix != "" })
+	}
+	need := []string{"{site}", "{service}"}
+	if postfix(c.Services) {
+		need = append(need, "{postfix}")
+	}
+	values := strings.Join(slices.Collect(maps.Values(c.PipelineInputs)), " ")
+	for _, p := range need {
+		if !strings.Contains(values, p) {
+			return fmt.Errorf("pipeline inputs must pass %s, or deploys can't tell those cells apart", p)
+		}
+		if !strings.Contains(c.EnvironmentTemplate, p) {
+			return fmt.Errorf("environment template must contain %s", p)
+		}
+		if c.APIEnvironmentTemplate != "" && !strings.Contains(c.APIEnvironmentTemplate, p) {
+			return fmt.Errorf("API environment template must contain %s", p)
+		}
+	}
+	agents := map[int64]int{} // agent id -> sites using it
+	for _, site := range c.Sites {
+		if site.AgentID > 0 {
+			agents[site.AgentID]++
+		}
+	}
+	if len(agents) > 0 {
+		pods := c.Kubernetes.Namespace + " " + c.Kubernetes.Selector
+		if c.Kubernetes.Namespace == "" {
+			return errors.New("sites name a GitLab agent: set the pod namespace")
+		}
+		for _, p := range need[1:] { // {service}, and {postfix} when variants exist
+			if !strings.Contains(pods, p) {
+				return fmt.Errorf("pod namespace or selector must contain %s, or services would share their pods", p)
+			}
+		}
+		if slices.ContainsFunc(slices.Collect(maps.Values(agents)), func(n int) bool { return n > 1 }) && !strings.Contains(pods, "{site}") {
+			return errors.New("sites share a GitLab agent: the pod namespace or selector must contain {site}")
+		}
+	}
+	for _, site := range c.Sites {
+		if site.VersionURL == "" {
+			continue
+		}
+		apis := slices.DeleteFunc(slices.Clone(c.Services), func(s Service) bool { return s.Kind != "api" || !s.runsOn(site.Name) })
+		if len(apis) > 0 && !strings.Contains(site.VersionURL, "{service}") {
+			return fmt.Errorf("site %s: version url must contain {service}: each API answers its own /version", site.Name)
+		}
+		if postfix(apis) && !strings.Contains(site.VersionURL, "{postfix}") {
+			return fmt.Errorf("site %s: version url must contain {postfix}: a postfixed API is its own deployment", site.Name)
 		}
 	}
 	return nil
 }
 
-var siteName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
-
 func isHTTP(raw string) bool {
 	u, err := url.Parse(raw)
 	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
-}
-
-// Site.Name is the GitLab environment name and is passed to CI as $SITE.
-type Site struct {
-	Name       string `json:"name"`
-	VersionURL string `json:"version_url"`
 }
 
 // Schema and Version mirror the /version response, see VERSION_API.md.
@@ -95,20 +306,40 @@ type Version struct {
 	Schema Schema `json:"schema"`
 }
 
-type SiteStatus struct {
-	Name   string  `json:"name"`
-	State  string  `json:"state"`
-	Commit string  `json:"commit,omitempty"`
-	Behind int     `json:"behind"` // -1 = unknown
-	Schema *Schema `json:"schema,omitempty"`
-	Error  string  `json:"error,omitempty"`
+// Cell is one service on one site.
+type Cell struct {
+	Site        string     `json:"site"`
+	Service     string     `json:"service"`
+	Postfix     string     `json:"postfix,omitempty"`
+	Kind        string     `json:"kind"`
+	State       string     `json:"state"`
+	Source      string     `json:"source"` // "version" (live /version) or "gitlab" (last deployment)
+	Commit      string     `json:"commit,omitempty"`
+	Behind      int        `json:"behind"` // -1 = unknown
+	DeployedAt  *time.Time `json:"deployed_at,omitempty"`
+	PipelineURL string     `json:"pipeline_url,omitempty"`
+	Schema      *Schema    `json:"schema,omitempty"`
+	Pods        *Pods      `json:"pods,omitempty"` // nil when not checked
+	// FailedDeploy is the environment's latest deployment when it failed or was
+	// canceled: the cell still runs the one before it.
+	FailedDeploy *FailedDeploy `json:"failed_deploy,omitempty"`
+	Error        string        `json:"error,omitempty"`
+}
+
+type FailedDeploy struct {
+	Status      string    `json:"status"`
+	SHA         string    `json:"sha"`
+	At          time.Time `json:"at"`
+	PipelineURL string    `json:"pipeline_url,omitempty"`
 }
 
 type Snapshot struct {
-	Branch    string       `json:"branch"`
-	Head      string       `json:"head"`
-	CheckedAt time.Time    `json:"checked_at"`
-	Sites     []SiteStatus `json:"sites"`
+	Branch    string    `json:"branch"`
+	Head      string    `json:"head"`
+	CheckedAt time.Time `json:"checked_at"`
+	Sites     []string  `json:"sites"`
+	Services  []Service `json:"services"`
+	Cells     []Cell    `json:"cells"`
 }
 
 // Fleet reads its configuration from the store on every call, so edits made
@@ -123,8 +354,8 @@ func (f *Fleet) load(ctx context.Context) (*Config, gitlab, error) {
 	if err != nil {
 		return nil, gitlab{}, err
 	}
-	if !cfg.ready() {
-		return nil, gitlab{}, ErrNotConfigured
+	if m := cfg.missing(); len(m) > 0 {
+		return nil, gitlab{}, fmt.Errorf("%w: open Settings and set %s", ErrNotConfigured, strings.Join(m, ", "))
 	}
 	return cfg, newGitlab(cfg, f.token), nil
 }
@@ -134,38 +365,126 @@ var client = &http.Client{Timeout: 10 * time.Second}
 // ErrStale means main moved after the caller looked at it.
 var ErrStale = errors.New("main moved since the status was loaded; refresh and confirm again")
 
-func (f *Fleet) Snapshot(ctx context.Context) (*Snapshot, error) {
-	cfg, gl, err := f.load(ctx)
-	if err != nil {
-		return nil, err
-	}
-	head, err := gl.branchHead(cfg.GitLab.Branch)
-	if err != nil {
-		return nil, fmt.Errorf("read %s head: %w", cfg.GitLab.Branch, err)
-	}
-	out := make([]SiteStatus, len(cfg.Sites))
+// parallel caps concurrent calls to GitLab and the sites; a fleet is
+// sites x services, which runs to hundreds of cells.
+const parallel = 32
+
+// versionTimeout bounds one /version call, so an unreachable site costs
+// seconds, not the client's full timeout, per API.
+const versionTimeout = 5 * time.Second
+
+// eachLimited runs fn(i) for i in [0, n) with at most parallel at once.
+func eachLimited(n int, fn func(i int)) {
+	sem := make(chan struct{}, parallel)
 	var wg sync.WaitGroup
-	for i, s := range cfg.Sites {
-		wg.Go(func() { out[i] = check(gl, s, head, cfg.VersionToken) })
+	for i := range n {
+		sem <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-sem }()
+			fn(i)
+		})
 	}
 	wg.Wait()
-	return &Snapshot{Branch: cfg.GitLab.Branch, Head: head, CheckedAt: time.Now().UTC(), Sites: out}, nil
 }
 
-func check(gl gitlab, s Site, head, versionToken string) SiteStatus {
-	st := SiteStatus{Name: s.Name, Behind: -1}
-	v, err := fetchVersion(s.VersionURL, versionToken)
+type target struct {
+	site Site
+	svc  Service
+}
+
+// cells lists every (site, service) the fleet runs, row by row.
+func (c *Config) cells() []target {
+	var out []target
+	for _, svc := range c.Services {
+		for _, site := range c.Sites {
+			if svc.runsOn(site.Name) {
+				out = append(out, target{site, svc})
+			}
+		}
+	}
+	return out
+}
+
+func (f *Fleet) Snapshot(ctx context.Context) (*Snapshot, error) {
+	snap, _, err := f.snapshot(ctx)
+	return snap, err
+}
+
+// snapshot also returns the config it was taken with.
+func (f *Fleet) snapshot(ctx context.Context) (*Snapshot, *Config, error) {
+	cfg, gl, err := f.load(ctx)
 	if err != nil {
-		st.State, st.Error = "DOWN", err.Error()
-		return st
+		return nil, nil, err
 	}
-	st.Commit, st.Schema, st.State = v.Commit, &v.Schema, classify(head, v)
-	if v.Commit == head {
-		st.Behind = 0
-	} else if n, err := gl.commitsBetween(v.Commit, head); err == nil {
-		st.Behind = n
+	head, err := gl.branchHead(ctx, cfg.GitLab.Branch)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read %s head: %w", cfg.GitLab.Branch, err)
 	}
-	return st
+	stopped, err := gl.stoppedEnvironments(ctx)
+	if err != nil {
+		stopped = nil // can't tell: judge cells by their deployments and pods alone
+	}
+	refs := cfg.cells()
+	out := make([]Cell, len(refs))
+	behind := &behindCache{ctx: ctx, gl: gl, head: head, m: map[string]*behindEntry{}}
+	eachLimited(len(refs), func(i int) { out[i] = check(ctx, gl, cfg, refs[i], head, behind, stopped) })
+
+	snap := &Snapshot{Branch: cfg.GitLab.Branch, Head: head, CheckedAt: time.Now().UTC(), Services: cfg.Services, Cells: out}
+	for _, s := range cfg.Sites {
+		snap.Sites = append(snap.Sites, s.Name)
+	}
+	return snap, cfg, nil
+}
+
+// check reads what one cell runs: live from an API's /version, otherwise from
+// the GitLab environment's last successful deployment. A cell read from GitLab
+// is down when its environment was stopped or none of its pods are ready.
+func check(ctx context.Context, gl gitlab, cfg *Config, t target, head string, behind *behindCache, stopped map[string]bool) Cell {
+	c := Cell{Site: t.site.Name, Service: t.svc.Name, Postfix: t.svc.Postfix, Kind: t.svc.Kind, Behind: -1}
+	if t.svc.Kind == "api" && t.site.VersionURL != "" {
+		c.Source = "version"
+		v, err := fetchVersion(ctx, expand(t.site.VersionURL, t.site.Name, t.svc), cfg.VersionToken)
+		if err != nil {
+			c.State, c.Error = "DOWN", err.Error()
+			return c
+		}
+		c.Commit, c.Schema, c.State = v.Commit, &v.Schema, classify(head, v)
+	} else {
+		c.Source = "gitlab"
+		env := cfg.environment(t.site.Name, t.svc)
+		d, failed, err := gl.running(ctx, env)
+		if err != nil {
+			c.State, c.Error = "UNKNOWN", err.Error()
+			return c
+		}
+		if failed != nil {
+			c.FailedDeploy = &FailedDeploy{Status: failed.Status, SHA: failed.SHA, At: failed.UpdatedAt, PipelineURL: failed.Deployable.Pipeline.WebURL}
+		}
+		if d == nil {
+			c.State, c.Error = "NEVER", "no successful deployment in the GitLab environment "+env
+			return c
+		}
+		c.Commit, c.DeployedAt, c.PipelineURL = d.SHA, &d.UpdatedAt, d.Deployable.Pipeline.WebURL
+		c.State = classify(head, &Version{Commit: d.SHA})
+		switch {
+		case stopped[env]:
+			c.State, c.Error = "DOWN", "the GitLab environment "+env+" is stopped"
+		case t.svc.Kind != "job" && t.site.AgentID > 0: // a job's pods finish by design
+			p, err := countPods(ctx, cfg.k8sProxy(), t.site.AgentID, gl.token,
+				expand(cfg.Kubernetes.Namespace, t.site.Name, t.svc), expand(cfg.Kubernetes.Selector, t.site.Name, t.svc))
+			if err != nil {
+				p.Error = err.Error() // the agent didn't answer: keep the deployment's word
+			} else if p.Ready == 0 {
+				c.State, c.Error = "DOWN", "no pods running"
+				if p.Total > 0 {
+					c.Error = fmt.Sprintf("0 of %d pods ready", p.Total)
+				}
+			}
+			c.Pods = &p
+		}
+	}
+	c.Behind = behind.of(c.Commit)
+	return c
 }
 
 // classify returns the worst state first: an unknown applied migration means
@@ -183,13 +502,57 @@ func classify(head string, v *Version) string {
 	return "OK"
 }
 
+// behindCache asks GitLab once per distinct commit: most cells share a
+// handful of commits.
+type behindCache struct {
+	ctx  context.Context
+	gl   gitlab
+	head string
+	mu   sync.Mutex
+	m    map[string]*behindEntry
+}
+
+type behindEntry struct {
+	once sync.Once
+	n    int
+}
+
+func (b *behindCache) of(sha string) int {
+	if sha == b.head {
+		return 0
+	}
+	b.mu.Lock()
+	e := b.m[sha]
+	if e == nil {
+		e = &behindEntry{n: -1}
+		b.m[sha] = e
+	}
+	b.mu.Unlock()
+	e.once.Do(func() {
+		if n, err := b.gl.commitsBetween(b.ctx, sha, b.head); err == nil {
+			e.n = n
+		}
+	})
+	return e.n
+}
+
+// Target names one cell to deploy.
+type Target struct {
+	Site    string `json:"site"`
+	Service string `json:"service"`
+	Postfix string `json:"postfix"`
+}
+
 type Run struct {
-	ID         int64  `json:"id"`
-	Site       string `json:"site"`
-	PipelineID int64  `json:"pipeline_id,omitempty"`
-	WebURL     string `json:"web_url,omitempty"`
-	Status     string `json:"status"`
-	Error      string `json:"error,omitempty"`
+	ID          int64  `json:"id"`
+	Site        string `json:"site"`
+	Service     string `json:"service"`
+	Postfix     string `json:"postfix,omitempty"`
+	PipelineID  int64  `json:"pipeline_id,omitempty"`
+	PipelineSHA string `json:"pipeline_sha,omitempty"`
+	WebURL      string `json:"web_url,omitempty"`
+	Status      string `json:"status"`
+	Error       string `json:"error,omitempty"`
 }
 
 type Deploy struct {
@@ -201,48 +564,100 @@ type Deploy struct {
 	Runs   []Run     `json:"runs"`
 }
 
-// Deploy triggers one pipeline per site at sha, which must still be the branch
-// head, so a deploy always ships what the operator confirmed. With userToken
-// set, pipelines are created as that GitLab user, so GitLab's own protected
+// resolve checks the targets against the config and drops duplicates.
+func (c *Config) resolve(ts []Target) ([]target, error) {
+	sites := map[string]Site{}
+	for _, s := range c.Sites {
+		sites[s.Name] = s
+	}
+	seen := map[Target]bool{}
+	var out []target
+	for _, t := range ts {
+		site, ok := sites[t.Site]
+		if !ok {
+			return nil, fmt.Errorf("unknown site %q", t.Site)
+		}
+		i := slices.IndexFunc(c.Services, func(s Service) bool { return s.Name == t.Service && s.Postfix == t.Postfix })
+		if i < 0 {
+			return nil, fmt.Errorf("unknown service %q", t.Service+t.Postfix)
+		}
+		if !c.Services[i].runsOn(t.Site) {
+			return nil, fmt.Errorf("%s does not run on %s", t.Service+t.Postfix, t.Site)
+		}
+		if !seen[t] {
+			seen[t] = true
+			out = append(out, target{site, c.Services[i]})
+		}
+	}
+	return out, nil
+}
+
+// Deploy triggers one pipeline per cell on the branch, which must still be at
+// sha, so a deploy ships what the operator confirmed. With userToken set,
+// pipelines are created as that GitLab user, so GitLab's own protected
 // branch/environment rules apply and the pipeline shows who deployed.
-func (f *Fleet) Deploy(ctx context.Context, by string, names []string, sha, userToken string) (*Deploy, error) {
+func (f *Fleet) Deploy(ctx context.Context, by string, targets []Target, sha, userToken string) (*Deploy, error) {
 	cfg, gl, err := f.load(ctx)
 	if err != nil {
 		return nil, err
+	}
+	cells, err := cfg.resolve(targets)
+	if err != nil {
+		return nil, err
+	}
+	if len(cells) == 0 {
+		return nil, errors.New("nothing selected")
 	}
 	trigger := gl
 	if userToken != "" {
 		trigger = newGitlab(cfg, userToken)
 	}
-	sites, err := pick(cfg.Sites, names)
-	if err != nil {
-		return nil, err
-	}
 	branch := cfg.GitLab.Branch
-	head, err := gl.branchHead(branch)
+	head, err := gl.branchHead(ctx, branch)
 	if err != nil {
 		return nil, fmt.Errorf("read %s head: %w", branch, err)
 	}
 	if sha != head {
 		return nil, ErrStale
 	}
-	d := &Deploy{By: by, Branch: branch, SHA: head}
-	// ponytail: sequential triggers; one POST each, fine until the fleet is in the hundreds.
-	for _, s := range sites {
-		r := Run{Site: s.Name}
-		p, err := trigger.triggerPipeline(branch, map[string]string{"SITE": s.Name, "DEPLOY_SHA": head})
-		if err != nil {
-			r.Status, r.Error = "error", err.Error()
-		} else {
-			r.PipelineID, r.WebURL, r.Status = p.ID, p.WebURL, p.Status
+	// Once the fan-out starts it runs to the end, even if the caller goes
+	// away, so every pipeline that was created gets recorded.
+	ctx = context.WithoutCancel(ctx)
+	d := &Deploy{By: by, Branch: branch, SHA: head, Runs: make([]Run, len(cells))}
+	eachLimited(len(cells), func(i int) {
+		t := cells[i]
+		r := Run{Site: t.site.Name, Service: t.svc.Name, Postfix: t.svc.Postfix}
+		inputs := map[string]string{}
+		for k, v := range cfg.PipelineInputs {
+			inputs[k] = strings.ReplaceAll(expand(v, t.site.Name, t.svc), "{sha}", head)
 		}
-		d.Runs = append(d.Runs, r)
-	}
+		p, err := trigger.triggerPipeline(ctx, branch, inputs, cfg.TriggerAs)
+		switch {
+		case err != nil:
+			r.Status, r.Error = "error", err.Error()
+		default:
+			r.PipelineID, r.PipelineSHA, r.WebURL, r.Status = p.ID, p.SHA, p.WebURL, p.Status
+			// A pipeline runs the branch. With {sha} in the inputs the CI
+			// can pin the build to head anyway; without it, say so if main
+			// moved between the check above and this trigger.
+			if p.SHA != "" && p.SHA != head && !pinned(cfg.PipelineInputs) {
+				r.Error = "main moved while triggering; this pipeline builds " + short(p.SHA)
+			}
+		}
+		d.Runs[i] = r
+	})
 	return d, nil
 }
 
-func fetchVersion(u, token string) (*Version, error) {
-	req, err := http.NewRequest(http.MethodGet, u, nil)
+// pinned reports whether deploy pipelines are told which commit to build.
+func pinned(inputs map[string]string) bool {
+	return slices.ContainsFunc(slices.Collect(maps.Values(inputs)), func(v string) bool { return strings.Contains(v, "{sha}") })
+}
+
+func fetchVersion(ctx context.Context, u, token string) (*Version, error) {
+	ctx, cancel := context.WithTimeout(ctx, versionTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +669,7 @@ func fetchVersion(u, token string) (*Version, error) {
 		return nil, err
 	}
 	if v.Commit == "" {
-		return nil, fmt.Errorf("version response has no commit")
+		return nil, errors.New("version response has no commit")
 	}
 	return &v, nil
 }
@@ -282,22 +697,28 @@ func readConfigFile(path string) (*configFile, error) {
 	return &c, nil
 }
 
-// pick returns the named sites, or all of them when names is empty.
-func pick(all []Site, names []string) ([]Site, error) {
-	if len(names) == 0 {
-		return all, nil
-	}
-	byName := map[string]Site{}
-	for _, s := range all {
-		byName[s.Name] = s
-	}
-	var out []Site
-	for _, n := range names {
-		s, ok := byName[strings.TrimSpace(n)]
-		if !ok {
-			return nil, fmt.Errorf("unknown site %q", n)
+// targetsFor lists the cells matching the site and service filters (empty =
+// all). Jobs are one-off, so they're only included when named.
+func (c *Config) targetsFor(sites, services []string) ([]Target, error) {
+	for _, s := range sites {
+		if !slices.ContainsFunc(c.Sites, func(x Site) bool { return x.Name == s }) {
+			return nil, fmt.Errorf("unknown site %q", s)
 		}
-		out = append(out, s)
+	}
+	for _, s := range services {
+		if !slices.ContainsFunc(c.Services, func(x Service) bool { return x.ID() == s }) {
+			return nil, fmt.Errorf("unknown service %q", s)
+		}
+	}
+	var out []Target
+	for _, t := range c.cells() {
+		if len(sites) > 0 && !slices.Contains(sites, t.site.Name) {
+			continue
+		}
+		if len(services) > 0 && !slices.Contains(services, t.svc.ID()) || len(services) == 0 && t.svc.Kind == "job" {
+			continue
+		}
+		out = append(out, Target{t.site.Name, t.svc.Name, t.svc.Postfix})
 	}
 	return out, nil
 }
@@ -312,14 +733,13 @@ func (f *Fleet) SyncRuns(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, r := range runs {
-		p, err := gl.pipeline(*r.PipelineID)
-		if err != nil || p.Status == r.Status {
-			continue // GitLab unreachable: keep the last known status, retry next sync
+	errs := make([]error, len(runs))
+	eachLimited(len(runs), func(i int) {
+		p, err := gl.pipeline(ctx, *runs[i].PipelineID)
+		if err != nil || p.Status == runs[i].Status {
+			return // GitLab unreachable: keep the last known status, retry next sync
 		}
-		if err := f.store.UpdateRunStatus(ctx, r.ID, p.Status); err != nil {
-			return err
-		}
-	}
-	return nil
+		errs[i] = f.store.UpdateRunStatus(ctx, runs[i].ID, p.Status)
+	})
+	return errors.Join(errs...)
 }

@@ -1,11 +1,28 @@
 {
-  "gitlab": {
-    "url": "https://gitlab.example.com",
-    "project": "group/app",
-    "branch": "main"
+  "gitlab": { "url": "https://gitlab.example.com", "project": "group/app", "branch": "main" },
+
+  "environment_template": "production-{site}-{service}{postfix}",
+  "api_environment_template": "production-{site}-{service}{postfix}-stable",
+
+  "trigger_as": "inputs",
+  "pipeline_inputs": {
+    "DEPLOY_ENV": "production",
+    "SITE": "{site}",
+    "SERVICE": "{service}",
+    "POSTFIX": "{postfix}",
+    "DEPLOY_SHA": "{sha}"
   },
+
+  "kubernetes": { "namespace": "production", "selector": "app={service}{postfix}" },
+
   "sites": [
-    { "name": "site-a", "version_url": "https://site-a.example.com/version" },
-    { "name": "site-b", "version_url": "https://site-b.example.com/version" }
+    { "name": "site-a", "version_url": "https://site-a.example.com/{service}{postfix}/version", "agent_id": 12 },
+    { "name": "site-b", "version_url": "https://api.site-b.example.com/{service}{postfix}/version", "agent_id": 13 }
+  ],
+  "services": [
+    { "name": "api-orders",     "kind": "api" },
+    { "name": "api-orders",     "kind": "api", "postfix": "-partner", "sites": ["site-b"] },
+    { "name": "worker-billing", "kind": "worker" },
+    { "name": "job-backfill",   "kind": "job" }
   ]
 }

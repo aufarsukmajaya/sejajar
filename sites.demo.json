@@ -1,12 +1,24 @@
 {
   "gitlab": { "url": "http://127.0.0.1:9999", "project": "acme/app", "branch": "main" },
-  "oauth_client_id": "sejajar-demo",
+  "oauth_client_id": "resonate-demo",
   "oauth_secret": "demo-secret",
+  "environment_template": "{site}-{service}{postfix}",
+  "pipeline_inputs": { "SITE": "{site}", "SERVICE": "{service}", "POSTFIX": "{postfix}", "DEPLOY_SHA": "{sha}" },
+  "trigger_as": "inputs",
+  "kubernetes": { "namespace": "{site}", "selector": "app={service}{postfix}" },
   "sites": [
-    { "name": "jakarta",  "version_url": "http://127.0.0.1:9999/sites/jakarta/version" },
-    { "name": "surabaya", "version_url": "http://127.0.0.1:9999/sites/surabaya/version" },
-    { "name": "medan",    "version_url": "http://127.0.0.1:9999/sites/medan/version" },
-    { "name": "bandung",  "version_url": "http://127.0.0.1:9999/sites/bandung/version" },
-    { "name": "makassar", "version_url": "http://127.0.0.1:9999/sites/makassar/version" }
+    { "name": "bandung",  "version_url": "http://127.0.0.1:9999/sites/{site}/{service}{postfix}/version", "agent_id": 1 },
+    { "name": "jakarta",  "version_url": "http://127.0.0.1:9999/sites/{site}/{service}{postfix}/version", "agent_id": 2 },
+    { "name": "makassar", "version_url": "http://127.0.0.1:9999/sites/{site}/{service}{postfix}/version", "agent_id": 3 },
+    { "name": "medan",    "version_url": "http://127.0.0.1:9999/sites/{site}/{service}{postfix}/version", "agent_id": 4 },
+    { "name": "surabaya", "version_url": "http://127.0.0.1:9999/sites/{site}/{service}{postfix}/version", "agent_id": 5 }
+  ],
+  "services": [
+    { "name": "api-core",      "kind": "api" },
+    { "name": "api-core",      "kind": "api", "postfix": "-partner", "sites": ["jakarta", "surabaya"] },
+    { "name": "api-report",    "kind": "api" },
+    { "name": "worker-mailer", "kind": "worker" },
+    { "name": "worker-sync",   "kind": "worker" },
+    { "name": "job-backfill",  "kind": "job" }
   ]
 }

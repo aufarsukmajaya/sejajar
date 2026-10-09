@@ -17,14 +17,17 @@ type deployRunsTable struct {
 	postgres.Table
 
 	// Columns
-	ID         postgres.ColumnInteger
-	DeployID   postgres.ColumnInteger
-	Site       postgres.ColumnString
-	PipelineID postgres.ColumnInteger
-	WebURL     postgres.ColumnString
-	Status     postgres.ColumnString
-	Error      postgres.ColumnString
-	UpdatedAt  postgres.ColumnTimestampz
+	ID          postgres.ColumnInteger
+	DeployID    postgres.ColumnInteger
+	Site        postgres.ColumnString
+	Service     postgres.ColumnString
+	Postfix     postgres.ColumnString
+	PipelineID  postgres.ColumnInteger
+	PipelineSha postgres.ColumnString
+	WebURL      postgres.ColumnString
+	Status      postgres.ColumnString
+	Error       postgres.ColumnString
+	UpdatedAt   postgres.ColumnTimestampz
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
@@ -66,31 +69,37 @@ func newDeployRunsTable(schemaName, tableName, alias string) *DeployRunsTable {
 
 func newDeployRunsTableImpl(schemaName, tableName, alias string) deployRunsTable {
 	var (
-		IDColumn         = postgres.IntegerColumn("id")
-		DeployIDColumn   = postgres.IntegerColumn("deploy_id")
-		SiteColumn       = postgres.StringColumn("site")
-		PipelineIDColumn = postgres.IntegerColumn("pipeline_id")
-		WebURLColumn     = postgres.StringColumn("web_url")
-		StatusColumn     = postgres.StringColumn("status")
-		ErrorColumn      = postgres.StringColumn("error")
-		UpdatedAtColumn  = postgres.TimestampzColumn("updated_at")
-		allColumns       = postgres.ColumnList{IDColumn, DeployIDColumn, SiteColumn, PipelineIDColumn, WebURLColumn, StatusColumn, ErrorColumn, UpdatedAtColumn}
-		mutableColumns   = postgres.ColumnList{DeployIDColumn, SiteColumn, PipelineIDColumn, WebURLColumn, StatusColumn, ErrorColumn, UpdatedAtColumn}
-		defaultColumns   = postgres.ColumnList{IDColumn, WebURLColumn, ErrorColumn, UpdatedAtColumn}
+		IDColumn          = postgres.IntegerColumn("id")
+		DeployIDColumn    = postgres.IntegerColumn("deploy_id")
+		SiteColumn        = postgres.StringColumn("site")
+		ServiceColumn     = postgres.StringColumn("service")
+		PostfixColumn     = postgres.StringColumn("postfix")
+		PipelineIDColumn  = postgres.IntegerColumn("pipeline_id")
+		PipelineShaColumn = postgres.StringColumn("pipeline_sha")
+		WebURLColumn      = postgres.StringColumn("web_url")
+		StatusColumn      = postgres.StringColumn("status")
+		ErrorColumn       = postgres.StringColumn("error")
+		UpdatedAtColumn   = postgres.TimestampzColumn("updated_at")
+		allColumns        = postgres.ColumnList{IDColumn, DeployIDColumn, SiteColumn, ServiceColumn, PostfixColumn, PipelineIDColumn, PipelineShaColumn, WebURLColumn, StatusColumn, ErrorColumn, UpdatedAtColumn}
+		mutableColumns    = postgres.ColumnList{DeployIDColumn, SiteColumn, ServiceColumn, PostfixColumn, PipelineIDColumn, PipelineShaColumn, WebURLColumn, StatusColumn, ErrorColumn, UpdatedAtColumn}
+		defaultColumns    = postgres.ColumnList{IDColumn, PostfixColumn, PipelineShaColumn, WebURLColumn, ErrorColumn, UpdatedAtColumn}
 	)
 
 	return deployRunsTable{
 		Table: postgres.NewTable(schemaName, tableName, alias, allColumns...),
 
 		//Columns
-		ID:         IDColumn,
-		DeployID:   DeployIDColumn,
-		Site:       SiteColumn,
-		PipelineID: PipelineIDColumn,
-		WebURL:     WebURLColumn,
-		Status:     StatusColumn,
-		Error:      ErrorColumn,
-		UpdatedAt:  UpdatedAtColumn,
+		ID:          IDColumn,
+		DeployID:    DeployIDColumn,
+		Site:        SiteColumn,
+		Service:     ServiceColumn,
+		Postfix:     PostfixColumn,
+		PipelineID:  PipelineIDColumn,
+		PipelineSha: PipelineShaColumn,
+		WebURL:      WebURLColumn,
+		Status:      StatusColumn,
+		Error:       ErrorColumn,
+		UpdatedAt:   UpdatedAtColumn,
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,

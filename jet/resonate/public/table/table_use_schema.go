@@ -12,6 +12,7 @@ package table
 func UseSchema(schema string) {
 	DeployRuns = DeployRuns.FromSchema(schema)
 	Deploys = Deploys.FromSchema(schema)
+	Services = Services.FromSchema(schema)
 	Sessions = Sessions.FromSchema(schema)
 	Settings = Settings.FromSchema(schema)
 	SiteVersions = SiteVersions.FromSchema(schema)

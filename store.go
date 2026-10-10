@@ -51,8 +51,8 @@ func (s *Store) AddDeploy(ctx context.Context, d *Deploy) error {
 
 	var row model.Deploys
 	err = table.Deploys.
-		INSERT(table.Deploys.CreatedBy, table.Deploys.Branch, table.Deploys.Sha).
-		VALUES(d.By, d.Branch, d.SHA).
+		INSERT(table.Deploys.CreatedBy, table.Deploys.Branch, table.Deploys.Sha, table.Deploys.Pinned).
+		VALUES(d.By, d.Branch, d.SHA, d.Pinned).
 		RETURNING(table.Deploys.AllColumns).
 		QueryContext(ctx, tx, &row)
 	if err != nil {
@@ -109,7 +109,7 @@ func (s *Store) ListDeploys(ctx context.Context, limit int64) ([]Deploy, error) 
 	}
 	out := make([]Deploy, len(rows))
 	for i, r := range rows {
-		d := Deploy{ID: r.ID, At: r.CreatedAt, By: r.CreatedBy, Branch: r.Branch, SHA: r.Sha, Runs: []Run{}}
+		d := Deploy{ID: r.ID, At: r.CreatedAt, By: r.CreatedBy, Branch: r.Branch, SHA: r.Sha, Pinned: r.Pinned, Runs: []Run{}}
 		for _, x := range r.Runs {
 			run := Run{ID: x.ID, Site: x.Site, Service: x.Service, Postfix: x.Postfix, PipelineSHA: x.PipelineSha,
 				WebURL: x.WebURL, Status: x.Status, Error: x.Error}
@@ -236,25 +236,32 @@ func (s *Store) lastVersions(ctx context.Context, cells []Cell) (map[cellKey]mod
 	return out, rows.Err()
 }
 
-// PinnedSHAs maps each pipeline Resonate started to the commit it pinned,
-// where that differs from the branch commit the pipeline ran on (main moved
-// during the fan-out). GitLab records the latter on the deployment.
-func (s *Store) PinnedSHAs(ctx context.Context) (map[int64]string, error) {
-	var rows []struct {
-		model.DeployRuns
-		model.Deploys
-	}
-	err := pg.SELECT(table.DeployRuns.PipelineID, table.Deploys.Sha).
-		FROM(table.DeployRuns.INNER_JOIN(table.Deploys, table.Deploys.ID.EQ(table.DeployRuns.DeployID))).
-		WHERE(table.DeployRuns.PipelineID.IS_NOT_NULL().
-			AND(table.DeployRuns.PipelineSha.NOT_EQ(pg.String(""))).
-			AND(table.DeployRuns.PipelineSha.NOT_EQ(table.Deploys.Sha))).
-		QueryContext(ctx, s.db, &rows)
+// PinnedSHAs maps those of the given pipelines that a pinned deploy started
+// to the commit it pinned, where that differs from the branch commit the
+// pipeline ran on (main moved during the fan-out). GitLab records the latter
+// on the deployment.
+func (s *Store) PinnedSHAs(ctx context.Context, pipelines []int64) (map[int64]string, error) {
 	out := map[int64]string{}
-	for _, r := range rows {
-		out[*r.PipelineID] = r.Sha
+	if len(pipelines) == 0 {
+		return out, nil
 	}
-	return out, err
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT r.pipeline_id, d.sha
+		FROM deploy_runs r JOIN deploys d ON d.id = r.deploy_id
+		WHERE r.pipeline_id = ANY($1::bigint[]) AND d.pinned AND r.pipeline_sha <> '' AND r.pipeline_sha <> d.sha`, pipelines)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var sha string
+		if err := rows.Scan(&id, &sha); err != nil {
+			return nil, err
+		}
+		out[id] = sha
+	}
+	return out, rows.Err()
 }
 
 // ListSiteVersions returns one cell's tracker rows, newest first.

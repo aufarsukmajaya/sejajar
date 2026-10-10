@@ -17,4 +17,5 @@ type Deploys struct {
 	CreatedBy string
 	Branch    string
 	Sha       string
+	Pinned    bool
 }

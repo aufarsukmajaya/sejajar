@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS deploys (
     created_at timestamptz NOT NULL DEFAULT now(),
     created_by text        NOT NULL,
     branch     text        NOT NULL,
-    sha        text        NOT NULL
+    sha        text        NOT NULL,
+    pinned     boolean     NOT NULL DEFAULT false -- its pipelines were given {sha}
 );
 
 -- One GitLab pipeline per (site, service) per deploy.
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS deploy_runs (
     updated_at   timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS deploy_runs_deploy_id_idx ON deploy_runs (deploy_id);
+CREATE INDEX IF NOT EXISTS deploy_runs_pipeline_id_idx ON deploy_runs (pipeline_id);
 CREATE INDEX IF NOT EXISTS deploy_runs_active_idx ON deploy_runs (id)
     WHERE status IN ('created', 'waiting_for_resource', 'preparing', 'pending', 'running', 'scheduled');
 
@@ -135,5 +137,10 @@ ALTER TABLE settings      ADD COLUMN IF NOT EXISTS pod_namespace            text
 ALTER TABLE settings      ADD COLUMN IF NOT EXISTS pod_selector             text  NOT NULL DEFAULT 'app={service}{postfix}';
 ALTER TABLE sites         ALTER COLUMN version_url SET DEFAULT '';
 ALTER TABLE sites         ADD COLUMN IF NOT EXISTS agent_id                 bigint NOT NULL DEFAULT 0 CHECK (agent_id >= 0);
+-- Deploys from before pinned was recorded count as pinned when the settings
+-- pin now (after the settings upgrades above): that is how their pipelines were read until then.
+ALTER TABLE deploys       ADD COLUMN IF NOT EXISTS pinned                   boolean;
+UPDATE deploys SET pinned = (SELECT pipeline_inputs::text LIKE '%{sha}%' FROM settings) WHERE pinned IS NULL;
+ALTER TABLE deploys       ALTER COLUMN pinned SET DEFAULT false, ALTER COLUMN pinned SET NOT NULL;
 DROP INDEX IF EXISTS site_versions_site_observed_idx; -- superseded by the per-cell index
 CREATE INDEX IF NOT EXISTS site_versions_cell_observed_idx ON site_versions (site, service, postfix, observed_at DESC);

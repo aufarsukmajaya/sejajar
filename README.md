@@ -107,11 +107,12 @@ moved since you looked. Passing `{sha}` lets the CI build the confirmed commit
 `main` moves while the pipelines are being created. Without it, Resonate flags
 any pipeline that GitLab started on a newer commit.
 
-One limit: GitLab records a deployment against the pipeline's own commit (the
-branch head when it started), not `DEPLOY_SHA`. So if `main` moves during a
-deploy, a worker or job pinned to the older commit can read as one commit newer
-than it runs, until the next deploy. APIs are unaffected, because their
-`/version` reports the real build.
+GitLab records a deployment against the pipeline's own commit (the branch head
+when it started), not `DEPLOY_SHA`. So when `main` moves during a pinned
+deploy, Resonate shows workers and jobs at the commit it pinned, which it
+remembers for every pipeline it started. A pipeline started outside Resonate
+reads as GitLab recorded it. APIs are unaffected, because their `/version`
+reports the real build.
 
 **Jobs** are one-off. "Select out of date" and row or site selection skip them;
 select them cell by cell (or name them with `-services`).

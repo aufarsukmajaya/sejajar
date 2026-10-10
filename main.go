@@ -106,7 +106,7 @@ func runServer(ctx context.Context, f *Fleet, addr string) {
 		Addr:              addr,
 		Handler:           s.routes(),
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      2 * time.Minute, // a deploy fans out one GitLab call per site
+		WriteTimeout:      statusTimeout + time.Minute,
 	}
 	go func() {
 		<-ctx.Done()

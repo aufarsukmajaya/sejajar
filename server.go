@@ -26,9 +26,10 @@ type server struct {
 
 	// The last snapshot, shared by every open dashboard: a sweep is hundreds
 	// of calls, so N tabs must not cost N sweeps. There is no background
-	// sweep: nobody looking means no calls. snapMu serialises sweeps; a
-	// settings save bumps configGen, which invalidates the cached one.
-	snapMu    sync.Mutex
+	// sweep: nobody looking means no calls. snapSem (one slot) serialises
+	// sweeps and their recording; a settings save bumps configGen, which
+	// invalidates the cached one.
+	snapSem   chan struct{}
 	snap      *Snapshot
 	snapAt    time.Time
 	snapTTL   time.Duration
@@ -45,10 +46,19 @@ type server struct {
 // pod call has its own short timeout.
 const snapshotTimeout = 5 * time.Minute
 
+// recordTimeout bounds writing a snapshot's version changes.
+const recordTimeout = 30 * time.Second
+
+// statusTimeout is the longest /api/status takes: waiting out another
+// sweep, then running its own.
+const statusTimeout = 2 * (snapshotTimeout + recordTimeout)
+
 // runSyncEvery is a var so tests can sync on every request.
 var runSyncEvery = 2 * time.Second
 
-func newServer(f *Fleet) *server { return &server{fleet: f, store: f.store} }
+func newServer(f *Fleet) *server {
+	return &server{fleet: f, store: f.store, snapSem: make(chan struct{}, 1)}
+}
 
 func newHandler(f *Fleet) http.Handler { return newServer(f).routes() }
 
@@ -77,8 +87,17 @@ func (s *server) routes() http.Handler {
 // one) and records every cell whose version changed.
 func (s *server) observe(ctx context.Context, fresh bool) (*Snapshot, error) {
 	asked := time.Now()
-	s.snapMu.Lock()
-	defer s.snapMu.Unlock()
+	// Wait out at most one sweep, so the reply fits in statusTimeout.
+	wait := time.NewTimer(snapshotTimeout + recordTimeout)
+	defer wait.Stop()
+	select {
+	case s.snapSem <- struct{}{}:
+	case <-wait.C:
+		return nil, errors.New("another fleet check is still running")
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-s.snapSem }()
 	gen := s.configGen.Load()
 	if s.snap != nil && s.snapGen == gen {
 		// A sweep that finished while this caller waited is as fresh as any.
@@ -98,14 +117,15 @@ func (s *server) observe(ctx context.Context, fresh bool) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	s.snap, s.snapAt, s.snapTTL, s.snapGen = snap, time.Now(), time.Duration(cfg.PollSeconds)*time.Second, gen
-	rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	// Recorded before anyone gets it, so the history matches the matrix.
+	rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
 	defer rcancel()
 	if n, err := s.store.RecordSnapshot(rctx, snap); err != nil {
 		log.Printf("record snapshot: %v", err)
 	} else if n > 0 {
 		log.Printf("recorded %d version change(s)", n)
 	}
+	s.snap, s.snapAt, s.snapTTL, s.snapGen = snap, time.Now(), time.Duration(cfg.PollSeconds)*time.Second, gen
 	return snap, nil
 }
 

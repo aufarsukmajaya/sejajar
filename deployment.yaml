@@ -33,7 +33,7 @@ metadata:
   labels:
     app: resonate
 spec:
-  replicas: 1 # every replica polls GitLab on its own; one is enough
+  replicas: 1 # the shared snapshot and the token-refresh lock are per process
   selector:
     matchLabels:
       app: resonate

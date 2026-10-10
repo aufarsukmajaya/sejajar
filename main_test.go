@@ -178,7 +178,8 @@ func TestSchemaUpgrade(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	for _, q := range []string{"DROP SCHEMA IF EXISTS upgrade_test CASCADE", "CREATE SCHEMA upgrade_test", "SET search_path TO upgrade_test", string(v1)} {
+	for _, q := range []string{"DROP SCHEMA IF EXISTS upgrade_test CASCADE", "CREATE SCHEMA upgrade_test", "SET search_path TO upgrade_test", string(v1),
+		"INSERT INTO deploys (created_by, branch, sha) VALUES ('t', 'main', 'x')"} {
 		if _, err := conn.ExecContext(ctx, q); err != nil {
 			t.Fatalf("%.40s: %v", q, err)
 		}
@@ -191,6 +192,10 @@ func TestSchemaUpgrade(t *testing.T) {
 	if err := conn.QueryRowContext(ctx, "SELECT pipeline_inputs::text || ' ' || trigger_as FROM settings").Scan(&inputs); err != nil ||
 		!strings.Contains(inputs, "{postfix}") || !strings.HasSuffix(inputs, " variables") {
 		t.Errorf("settings after upgrade: %q, %v; v1 passed CI variables and must keep doing so", inputs, err)
+	}
+	var pinned bool
+	if err := conn.QueryRowContext(ctx, "SELECT pinned FROM deploys").Scan(&pinned); err != nil || !pinned {
+		t.Errorf("old deploy pinned = %v, %v; the default inputs pass {sha}", pinned, err)
 	}
 	if _, err := conn.ExecContext(ctx, "INSERT INTO deploys (created_by, branch, sha) VALUES ('t', 'main', 'x'); "+
 		"INSERT INTO deploy_runs (deploy_id, site, service, postfix, pipeline_sha, status) VALUES (1, 's', 'api', '', 'x', 'running'); "+
@@ -488,6 +493,28 @@ func TestEndToEnd(t *testing.T) {
 	}
 	if h := history("medan", "job-backfill", ""); len(h) != 2 || h[0].State != "OK" || h[0].Source != "gitlab" || h[1].State != "NEVER" {
 		t.Errorf("medan job-backfill history = %+v", h)
+	}
+
+	// main moved during a pinned fan-out: GitLab recorded the pipeline's
+	// commit, the job rolled out the one Resonate pinned. Only a pinned
+	// deploy's pipelines read as their pinned commit.
+	oldHead := snap.Head
+	var pushed map[string]string
+	do(browser(), "POST", gl.URL+"/mock/push", "", nil, &pushed)
+	repinned := func(q string) Cell {
+		t.Helper()
+		if _, err := store.db.ExecContext(ctx, q, deploys[0].ID); err != nil {
+			t.Fatal(err)
+		}
+		snap = Snapshot{}
+		call("GET", "/api/status?fresh", "", nil, &snap)
+		return cells()["surabaya/worker-sync"]
+	}
+	if c := repinned("UPDATE deploys SET sha = '" + pushed["head"] + "' WHERE id = $1"); c.Commit != pushed["head"] || c.State != "OK" || c.Behind != 0 {
+		t.Errorf("pinned to the new head: %+v, want it OK at %s", c, short(pushed["head"]))
+	}
+	if c := repinned("UPDATE deploys SET pinned = false WHERE id = $1"); c.Commit != oldHead || c.State != "BEHIND" || c.Behind != 1 {
+		t.Errorf("not pinned: %+v, want 1 behind at what GitLab recorded", c)
 	}
 
 	// 6. a site can't be dropped while a service still names it; drop both and

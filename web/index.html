@@ -804,7 +804,7 @@ async function boot() {
 
 function showLogin(mode, error) {
   me = null;
-  clearTimeout(deployTimer); clearInterval(statusTimer);
+  clearTimeout(deployTimer); clearTimeout(statusTimer);
   document.querySelectorAll("dialog[open]").forEach((d) => d.close());
   $("app").classList.remove("shown");
   setTimeout(() => { if (!me) $("app").hidden = true; }, 700);
@@ -850,8 +850,12 @@ function showApp(res) {
   skeleton();
   loadStatus();
   loadDeploys();
-  clearInterval(statusTimer);
-  statusTimer = setInterval(() => document.hidden || loadStatus(), 30000);
+}
+
+// Re-check as often as Settings say; a hidden tab waits until it is looked at.
+function pollStatus() {
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => document.hidden ? pollStatus() : loadStatus(), (snap?.poll_seconds || 60) * 1000);
 }
 
 function skeleton() {
@@ -878,7 +882,7 @@ function legend() {
 }
 
 // ---------- status: the matrix ----------
-// fresh skips the server's shared snapshot (up to 10s old): for Refresh and
+// fresh skips the server's shared snapshot (up to poll_seconds old): for Refresh and
 // right after deploys finish.
 async function loadStatus(fresh) {
   if (!me) return;
@@ -897,6 +901,7 @@ async function loadStatus(fresh) {
     } else if (e.status !== 401) toast("Status failed: " + e.message);
   } finally {
     $("refresh").disabled = false;
+    if (me) pollStatus();
   }
 }
 

@@ -386,6 +386,8 @@ type Cell struct {
 	// canceled: the cell still runs the one before it.
 	FailedDeploy *FailedDeploy `json:"failed_deploy,omitempty"`
 	Error        string        `json:"error,omitempty"`
+
+	pipelineID int64 // the deployment's pipeline, for cells read from GitLab
 }
 
 type FailedDeploy struct {
@@ -402,6 +404,8 @@ type Snapshot struct {
 	Sites     []string  `json:"sites"`
 	Services  []Service `json:"services"`
 	Cells     []Cell    `json:"cells"`
+
+	PollSeconds int `json:"poll_seconds"` // how often an open dashboard re-checks
 }
 
 // Fleet reads its configuration from the store on every call, so edits made
@@ -481,40 +485,54 @@ func (f *Fleet) snapshot(ctx context.Context) (*Snapshot, *Config, error) {
 	if err != nil {
 		log.Printf("stopped environments: %v", err) // judge cells by their deployments and pods alone
 	}
-	var pinned map[int64]string
-	if cfg.pinsSHA() {
-		if pinned, err = f.store.PinnedSHAs(ctx); err != nil {
-			log.Printf("pinned deploys: %v", err)
-		}
-	}
 	refs := cfg.cells()
 	out := make([]Cell, len(refs))
-	sw := sweep{gl: gl, cfg: cfg, head: head, stopped: stopped, pinned: pinned,
-		behind: &behindCache{ctx: ctx, gl: gl, head: head, m: map[string]*behindEntry{}}}
-	eachLimited(len(refs), func(i int) { out[i] = sw.check(ctx, refs[i]) })
+	behind := &behindCache{ctx: ctx, gl: gl, head: head, m: map[string]*behindEntry{}}
+	eachLimited(len(refs), func(i int) {
+		c := check(ctx, gl, cfg, head, stopped, refs[i])
+		if c.Commit != "" {
+			c.Behind = behind.of(c.Commit)
+		}
+		out[i] = c
+	})
 
-	snap := &Snapshot{Branch: cfg.GitLab.Branch, Head: head, CheckedAt: time.Now().UTC(), Services: cfg.Services, Cells: out}
+	var pipelines []int64
+	for _, c := range out {
+		if c.pipelineID != 0 {
+			pipelines = append(pipelines, c.pipelineID)
+		}
+	}
+	pinned, err := f.store.PinnedSHAs(ctx, pipelines)
+	if err != nil {
+		log.Printf("pinned deploys: %v", err) // show what GitLab recorded
+	}
+	// Only pipelines main moved under are pinned, so these are few.
+	for i := range out {
+		c := &out[i]
+		sha, ok := pinned[c.pipelineID]
+		if !ok {
+			continue
+		}
+		c.Commit = sha // GitLab records the branch commit; the job rolled out the pinned image
+		if c.State != "DOWN" {
+			c.State = classify(head, &Version{Commit: sha})
+		}
+		c.Behind = behind.of(sha)
+	}
+
+	snap := &Snapshot{Branch: cfg.GitLab.Branch, Head: head, CheckedAt: time.Now().UTC(), Services: cfg.Services, Cells: out,
+		PollSeconds: cfg.PollSeconds}
 	for _, s := range cfg.Sites {
 		snap.Sites = append(snap.Sites, s.Name)
 	}
 	return snap, cfg, nil
 }
 
-// sweep is what every cell's check shares within one snapshot.
-type sweep struct {
-	gl      gitlab
-	cfg     *Config
-	head    string
-	behind  *behindCache
-	stopped map[string]bool  // nil: couldn't tell
-	pinned  map[int64]string // pipeline id -> the commit Resonate pinned it to, when that differs from its branch commit
-}
-
 // check reads what one cell runs: live from an API's /version, otherwise from
 // the GitLab environment's last successful deployment. A cell read from GitLab
-// is down when its environment was stopped or none of its pods are ready.
-func (sw sweep) check(ctx context.Context, t target) Cell {
-	gl, cfg, head, behind, stopped := sw.gl, sw.cfg, sw.head, sw.behind, sw.stopped
+// is down when its environment was stopped (stopped is nil when GitLab
+// couldn't tell) or none of its pods are ready.
+func check(ctx context.Context, gl gitlab, cfg *Config, head string, stopped map[string]bool, t target) Cell {
 	c := Cell{Site: t.site.Name, Service: t.svc.Name, Postfix: t.svc.Postfix, Kind: t.svc.Kind, Behind: -1}
 	if t.svc.Kind == "api" && t.site.VersionURL != "" {
 		c.Source = "version"
@@ -524,44 +542,43 @@ func (sw sweep) check(ctx context.Context, t target) Cell {
 			return c
 		}
 		c.Commit, c.Schema, c.State = v.Commit, &v.Schema, classify(head, v)
-	} else {
-		c.Source = "gitlab"
-		env := cfg.environment(t.site.Name, t.svc)
-		d, failed, err := gl.running(ctx, env)
-		if err != nil {
-			c.State, c.Error = "UNKNOWN", err.Error()
-			return c
-		}
-		if failed != nil {
-			c.FailedDeploy = &FailedDeploy{Status: failed.Status, SHA: failed.SHA, At: failed.UpdatedAt, PipelineURL: failed.Deployable.Pipeline.WebURL}
-		}
-		if d == nil {
-			c.State, c.Error = "NEVER", "no successful deployment in the GitLab environment "+env
-			return c
-		}
-		c.Commit, c.DeployedAt, c.PipelineURL = d.SHA, &d.UpdatedAt, d.Deployable.Pipeline.WebURL
-		if sha, ok := sw.pinned[d.Deployable.Pipeline.ID]; ok {
-			c.Commit = sha // GitLab records the branch commit; the job rolled out the pinned image
-		}
-		c.State = classify(head, &Version{Commit: d.SHA})
-		switch {
-		case stopped[env]:
-			c.State, c.Error = "DOWN", "the GitLab environment "+env+" is stopped"
-		case t.svc.Kind != "job" && t.site.AgentID > 0: // a job's pods finish by design
-			p, err := countPods(ctx, cfg.k8sProxy(), t.site.AgentID, gl.token,
-				expand(cfg.Kubernetes.Namespace, t.site.Name, t.svc), expand(cfg.Kubernetes.Selector, t.site.Name, t.svc))
-			if err != nil {
-				p.Error = err.Error() // the agent didn't answer: keep the deployment's word
-			} else if p.Ready == 0 {
-				c.State, c.Error = "DOWN", "no pods running"
-				if p.Total > 0 {
-					c.Error = fmt.Sprintf("0 of %d pods ready", p.Total)
-				}
-			}
-			c.Pods = &p
-		}
+		return c
 	}
-	c.Behind = behind.of(c.Commit)
+	c.Source = "gitlab"
+	env := cfg.environment(t.site.Name, t.svc)
+	d, failed, err := gl.running(ctx, env)
+	if err != nil {
+		c.State, c.Error = "UNKNOWN", err.Error()
+		return c
+	}
+	if failed != nil {
+		c.FailedDeploy = &FailedDeploy{Status: failed.Status, SHA: failed.SHA, At: failed.UpdatedAt, PipelineURL: failed.Deployable.Pipeline.WebURL}
+	}
+	if d == nil {
+		c.State, c.Error = "NEVER", "no successful deployment in the GitLab environment "+env
+		return c
+	}
+	c.Commit, c.DeployedAt, c.PipelineURL, c.pipelineID = d.SHA, &d.UpdatedAt, d.Deployable.Pipeline.WebURL, d.Deployable.Pipeline.ID
+	if stopped[env] {
+		c.State, c.Error = "DOWN", "the GitLab environment "+env+" is stopped"
+		return c
+	}
+	if t.svc.Kind != "job" && t.site.AgentID > 0 { // a job's pods finish by design
+		p, err := countPods(ctx, cfg.k8sProxy(), t.site.AgentID, gl.token,
+			expand(cfg.Kubernetes.Namespace, t.site.Name, t.svc), expand(cfg.Kubernetes.Selector, t.site.Name, t.svc))
+		if err != nil {
+			p.Error = err.Error() // the agent didn't answer: keep the deployment's word
+		} else if p.Ready == 0 {
+			c.State, c.Error = "DOWN", "no pods running"
+			if p.Total > 0 {
+				c.Error = fmt.Sprintf("0 of %d pods ready", p.Total)
+			}
+		}
+		c.Pods = &p
+	}
+	if c.State == "" {
+		c.State = classify(head, &Version{Commit: c.Commit})
+	}
 	return c
 }
 
@@ -639,6 +656,7 @@ type Deploy struct {
 	By     string    `json:"by"`
 	Branch string    `json:"branch"`
 	SHA    string    `json:"sha"`
+	Pinned bool      `json:"pinned"` // its pipelines were given {sha}
 	Runs   []Run     `json:"runs"`
 }
 
@@ -701,7 +719,7 @@ func (f *Fleet) Deploy(ctx context.Context, by string, targets []Target, sha, us
 	// Once the fan-out starts it runs to the end, even if the caller goes
 	// away, so every pipeline that was created gets recorded.
 	ctx = context.WithoutCancel(ctx)
-	d := &Deploy{By: by, Branch: branch, SHA: head, Runs: make([]Run, len(cells))}
+	d := &Deploy{By: by, Branch: branch, SHA: head, Pinned: cfg.pinsSHA(), Runs: make([]Run, len(cells))}
 	eachLimited(len(cells), func(i int) {
 		t := cells[i]
 		r := Run{Site: t.site.Name, Service: t.svc.Name, Postfix: t.svc.Postfix}
@@ -718,18 +736,13 @@ func (f *Fleet) Deploy(ctx context.Context, by string, targets []Target, sha, us
 			// A pipeline runs the branch. With {sha} in the inputs the CI
 			// can pin the build to head anyway; without it, say so if main
 			// moved between the check above and this trigger.
-			if p.SHA != "" && p.SHA != head && !pinned(cfg.PipelineInputs) {
+			if p.SHA != "" && p.SHA != head && !d.Pinned {
 				r.Error = "main moved while triggering; this pipeline builds " + short(p.SHA)
 			}
 		}
 		d.Runs[i] = r
 	})
 	return d, nil
-}
-
-// pinned reports whether deploy pipelines are told which commit to build.
-func pinned(inputs map[string]string) bool {
-	return slices.ContainsFunc(slices.Collect(maps.Values(inputs)), func(v string) bool { return strings.Contains(v, "{sha}") })
 }
 
 func fetchVersion(ctx context.Context, u, token string) (*Version, error) {

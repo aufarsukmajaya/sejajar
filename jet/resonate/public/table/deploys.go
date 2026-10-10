@@ -22,6 +22,7 @@ type deploysTable struct {
 	CreatedBy postgres.ColumnString
 	Branch    postgres.ColumnString
 	Sha       postgres.ColumnString
+	Pinned    postgres.ColumnBool
 
 	AllColumns     postgres.ColumnList
 	MutableColumns postgres.ColumnList
@@ -68,9 +69,10 @@ func newDeploysTableImpl(schemaName, tableName, alias string) deploysTable {
 		CreatedByColumn = postgres.StringColumn("created_by")
 		BranchColumn    = postgres.StringColumn("branch")
 		ShaColumn       = postgres.StringColumn("sha")
-		allColumns      = postgres.ColumnList{IDColumn, CreatedAtColumn, CreatedByColumn, BranchColumn, ShaColumn}
-		mutableColumns  = postgres.ColumnList{CreatedAtColumn, CreatedByColumn, BranchColumn, ShaColumn}
-		defaultColumns  = postgres.ColumnList{IDColumn, CreatedAtColumn}
+		PinnedColumn    = postgres.BoolColumn("pinned")
+		allColumns      = postgres.ColumnList{IDColumn, CreatedAtColumn, CreatedByColumn, BranchColumn, ShaColumn, PinnedColumn}
+		mutableColumns  = postgres.ColumnList{CreatedAtColumn, CreatedByColumn, BranchColumn, ShaColumn, PinnedColumn}
+		defaultColumns  = postgres.ColumnList{IDColumn, CreatedAtColumn, PinnedColumn}
 	)
 
 	return deploysTable{
@@ -82,6 +84,7 @@ func newDeploysTableImpl(schemaName, tableName, alias string) deploysTable {
 		CreatedBy: CreatedByColumn,
 		Branch:    BranchColumn,
 		Sha:       ShaColumn,
+		Pinned:    PinnedColumn,
 
 		AllColumns:     allColumns,
 		MutableColumns: mutableColumns,

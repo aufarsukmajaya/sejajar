@@ -122,6 +122,11 @@ func (s *server) sessionUser(r *http.Request) (*User, error) {
 // the lock serialises them and the re-read skips work another request did.
 // ponytail: in-process lock; run one replica, or move to SELECT ... FOR UPDATE for more.
 func (s *server) refresh(ctx context.Context, cfg *Config, id string) (model.Sessions, error) {
+	// Once GitLab issues new tokens the old refresh token is dead, so the
+	// browser going away must not stop them from being saved. The timeout
+	// keeps a hung database from holding refreshMu for everyone.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
 	row, err := s.store.GetSession(ctx, id)
@@ -132,9 +137,12 @@ func (s *server) refresh(ctx context.Context, cfg *Config, id string) (model.Ses
 	if err != nil {
 		return row, err
 	}
+	// A failed level check keeps the old level: the new tokens must be saved
+	// either way, or the session is left holding a dead refresh token.
 	level, err := newGitlab(cfg, s.fleet.token).memberLevel(ctx, row.UserID)
 	if err != nil {
-		return row, err
+		log.Printf("refresh %s: access level: %v", row.Username, err)
+		level = int(row.AccessLevel)
 	}
 	if row.AccessLevel == levelOwner && level < levelOwner {
 		level = levelOwner // instance admins keep the level they signed in with

@@ -92,11 +92,12 @@ type site struct {
 }
 
 type deployment struct {
-	ID        int64     `json:"id"`
-	SHA       string    `json:"sha"`
-	Status    string    `json:"status"`
-	UpdatedAt time.Time `json:"updated_at"`
-	pipeline  string
+	ID         int64     `json:"id"`
+	SHA        string    `json:"sha"`
+	Status     string    `json:"status"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	pipeline   string
+	pipelineID int64
 }
 
 type pipeline struct {
@@ -275,7 +276,7 @@ func (s *Server) listDeployments(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		out = append(out, map[string]any{"id": d.ID, "sha": d.SHA, "status": d.Status, "updated_at": d.UpdatedAt,
-			"deployable": map[string]any{"pipeline": map[string]string{"web_url": d.pipeline}}})
+			"deployable": map[string]any{"pipeline": map[string]any{"id": d.pipelineID, "web_url": d.pipeline}}})
 		if len(out) == 1 {
 			break
 		}
@@ -387,7 +388,7 @@ func (s *Server) finish(p *pipeline) {
 			}
 		}
 	}
-	s.deployments[env] = append(s.deployments[env], deployment{ID: s.nextID, SHA: p.SHA, Status: "success", UpdatedAt: time.Now().UTC(), pipeline: p.WebURL})
+	s.deployments[env] = append(s.deployments[env], deployment{ID: s.nextID, SHA: p.SHA, Status: "success", UpdatedAt: time.Now().UTC(), pipeline: p.WebURL, pipelineID: p.ID})
 	delete(s.stopped, env) // a new deployment brings a stopped environment back
 	p.Status = "success"
 }
